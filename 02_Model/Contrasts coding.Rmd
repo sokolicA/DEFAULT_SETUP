@@ -1,0 +1,48 @@
+---
+title: "Contrasts coding"
+author: "Andrej Sokolič"
+date: "28 3 2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+[CONTRAST CODING SYSTEMS FOR CATEGORICAL VARIABLES in R][https://stats.idre.ucla.edu/r/library/r-library-contrast-coding-systems-for-categorical-variables/]
+
+[Coding Matrices][https://cran.r-project.org/web/packages/codingMatrices/vignettes/codingMatrices.pdf]
+[Stats SE answer][https://stats.stackexchange.com/questions/78354/what-is-a-contrast-matrix]
+
+
+```{r eval = F}
+#DODATNI LINKI: https://cran.r-project.org/web/packages/codingMatrices/vignettes/codingMatrices.pdf
+#DODATNI LINK: https://stats.stackexchange.com/questions/78354/what-is-a-contrast-matrix
+
+hsb2 = read.table('https://stats.idre.ucla.edu/stat/data/hsb2.csv', header=T, sep=",")
+hsb2$race.f = factor(hsb2$race, labels=c("Hispanic", "Asian", "African-Am", "Caucasian"))
+tapply(hsb2$write, hsb2$race.f, mean)
+contr.treatment(4)
+contrasts(hsb2$race.f) = contr.treatment(4)
+mod.trt <- lm(write ~ race.f, hsb2)
+summary(mod.trt)
+model.matrix(mod.trt)
+
+# INTERPRETACIJA bet:
+solve(cbind(Ave = 1, contr.treatment(4)))  # to %*% vektor mu1, mu2, mu3,... = vektor beta0, beta1,...
+###
+
+#creating the contrast matrix manually by modifying the dummy coding scheme
+c<-contr.treatment(4)
+my.coding<-matrix(rep(1/4, 12), ncol=3)
+my.simple<-c-my.coding
+my.simple
+
+contrasts(hsb2$race.f)<-my.simple
+mod.simple <- (lm(write~race.f, hsb2))
+
+
+# INTERPRETACIJA:
+solve(cbind(Ave = 1, my.simple))  # to %*% vektor mu1, mu2, mu3,... = vektor beta0, beta1,...
+x <- c(0, 0, 1)
+```

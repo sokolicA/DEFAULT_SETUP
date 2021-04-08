@@ -1,0 +1,46 @@
+---
+title: "Naslov"
+author: "Andrej Sokolič"
+header-includes:
+   - \usepackage[slovenian]{babel}
+params: 
+  printcode: FALSE
+  printresults: hide
+  figshow: hide
+  displaywarnings : FALSE
+  evalForSol: TRUE
+  d: !r Sys.Date() 
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r, setup, include=FALSE}
+# set this option in the first code chunk in the document
+knitr::opts_chunk$set(echo = params$printcode, results= params$printresults, fig.show = params$figshow, warning = params$displaywarnings, eval=params$evalForSol, 
+                      fig.align='center')
+```
+
+```{r libraries, message = FALSE, warning = FALSE}
+
+```
+
+
+
+Hitra povezava na dokument z navodili za pripravo dokumentov z [R Markdown (cheat sheet)](https://github.com/rstudio/cheatsheets/raw/master/rmarkdown-2.0.pdf)
+
+
+Pripravimo dokument, ki vsebuje besedilo in kodo (.Rmd)  -> tvorimo ponovljivo porocilo (html, pdf, MS
+Word, RTF dokumenti). Uporabili bomo knjiznico `rmarkdown` za pretvorbo dokumentov. (Pretvorimo dokumente z uporabo menijev v RStudiu, ali z ukazom `rmarkdown::render`).
+
+
+Povezava na tecaj o uporabi [R markdown dokumentov - R Markdown from R Studio](https://rmarkdown.rstudio.com/lesson-1.html). 
+
+
+
+Dokument pripravljen z verzijo R-a `r getRversion()`. Vključitev verzije R in verzije knjižnic je pomembno za ponovljivost rezultatov, saj je R posodablja/spreminja. V glavi dokumenta so lahko definirani nekateri parametri, ki so kasneje uporabljeni v dokumentu. Pri Knit je v spustnem seznamu opcija Knit with parameters. Danasnji datum je `r params$d`.
+
+V HTML outputu je lažje kopirati tabele kot v PDF formatu.
+
+Ponovljivost: ponovimo lahko natanko vse rezultate, ki smo jih dobili z analizo, v kasnejšem času in dobimo iste rezultate.
+
