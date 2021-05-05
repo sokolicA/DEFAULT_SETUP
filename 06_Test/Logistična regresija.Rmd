@@ -1699,6 +1699,28 @@ for (k in 1:2){
 
 ### Profile LL
 
+Definicija:
+
+Naj bo $\theta$ vektor parametrov, ki ga lahko razdelimo na $\theta = (\delta, \xi)$. Predpostavimo, da nas zanime le vektor parametrov $\delta$ in da je vektor parametrov $\xi$ odveč/moteč. Funkcijo verjetja lahko zapišemo kot:
+$$
+L(\theta; y) = L(\delta, \xi; y) = f(y; \delta, \xi),
+$$
+kjer je $f$ sampling model (model vzorčenja?.. porazdelitev).
+
+Primer: 
+Recimo, da je $f$ gostota normalne porazdelitve, $y$ predstavlja $n$ neodvisnih opazovanj. Vektor $\theta$ je potem $(\mu, \sigma)$, zanima pa nas na primer samo $\sigma$. 
+
+Profile likelihood parametra zanimanja je definiran kot:
+$$
+L_p(\delta) = \sup_{\xi} L(\delta, \xi; y)
+$$
+Zanima nas lahko še normalizirana verzija PL, ki je dobljena kot razmerje PL s celotnim ML:
+$$
+R_p(\delta) = \frac{\sup_{\xi} L(\delta, \xi; y)}{\sup_{(\delta, \xi)} L(\delta, \xi; y)}
+$$
+[https://stats.stackexchange.com/questions/27976/how-can-i-find-the-standard-deviation-of-the-sample-standard-deviation-from-a-no/27981#27981](Primer uporabe z normalno porazdelitvijo.)
+
+
 ```{r}
 ok <- (!is.na(nes$rvote) & !is.na(nes$female) & !is.na(nes$black) & !is.na(nes$income))
 fit_glm <- glm(rvote ~ female + black + income, subset=(year==1964),
