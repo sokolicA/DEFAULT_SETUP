@@ -1,0 +1,1926 @@
+---
+title: "Logistična regresija"
+author: "Andrej Sokolič"
+date: "28 4 2021"
+params:
+  racunaj: FALSE
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = params$racunaj)
+```
+
+```{r eval = T}
+library(tidyverse)
+library(here)
+library(arm)
+library("rstanarm")
+library("foreign")
+library(cowplot)
+```
+
+```{r eval = T}
+options(mc.cores = parallel::detectCores() - 1)
+logit <- qlogis
+invlogit <- plogis
+```
+
+
+```{r eval = F}
+#install.packages("logistf")
+# https://cran.r-project.org/web/packages/logistf/index.html
+
+library(logistf)
+
+## POGLEJ KAKO NA?IN SIMULACIJE VPLIVA NA METODE
+
+curve(exp(-(1/(x*(-0.25)+1))^(1/-0.25)), from = -5, to = 5)
+curve(exp(-(1/(x*(0.25)+1))^(1/0.2)), from = -5, to = 5, add = TRUE, col = "red")
+curve(1/(1 + exp(-x)), from = -5, to = 5, add = TRUE, col = "blue")
+curve(pnorm(x), from = -5, to = 5, add = TRUE, col = "green")
+
+# Simulate Data -----------------------------------------------------------
+
+#set.seed(5)
+N <- 10000
+x1 <- rnorm(N)
+x2 <- rnorm(N)
+x3 <- rnorm(N)
+eps <- rnorm(N, 0, 0.5)
+z <- 15 + 3 * x1 + 4 * x2 + 2 * x3 + eps
+Pr <- 1 / (1 + exp(-z))
+y <- rbinom(N, 1, Pr)
+table(y)
+
+# ---
+
+Data <- data.frame(y = y, x1 = x1, x2 = x2, x3 = x3)
+
+Pr_Tau <- exp(-(1/(z*(0.25)+1))^(1/0.25))
+y <- rbinom(N, 1, Pr_Tau)
+table(y)
+
+N <- 10000
+x1 <- rgamma(N, 1, 1)
+x2 <- rgamma(N, 1, 1)
+x3 <- rgamma(N, 1, 1)
+eps <- rnorm(N, 0, 1)
+z <- 5 + 0.5 * x1 + 2 * x2 + 1 * x3 + eps
+Pr <- 1 / (1 + exp(-z))
+y <- rbinom(N, 1, Pr)
+table(y)
+
+Data <- data.frame(y = y, x1 = x1, x2 = x2, x3 = x3)
+
+
+# Fit models --------------------------------------------------------------
+
+f <- formula(y ~ x1 + x2 + x3)
+
+Fit_LR <- glm(f, family = "binomial", data = Data)
+summary(Fit_LR)
+
+Prob_LR <- predict(Fit_LR, type = "response")
+Pred_LR <- ifelse(Prob_LR > 0.5, 1, 0)
+
+table(Pred_LR, y)
+
+# NAVADEN, KOT GLM
+Fit_FLR1 <- logistf(f, data = Data, firth = FALSE, pl = FALSE)
+summary(Fit_FLR1)
+# UPORABI FIRTH
+Fit_FLR2 <- logistf(f, data = Data, firth = TRUE, pl = TRUE)
+summary(Fit_FLR2)
+exp(coef(Fit_FLR2))  # razmerje obetov
+
+Prob_FLR <- predict(Fit_FLR2, type = "response")
+Pred_FLR <- ifelse(Prob_FLR > 0.5, 1, 0)
+
+table(Pred_FLR, y)
+
+
+
+# MLE ESTIMATION ----------------------------------------------------------
+library(tidyverse)
+data(iris)
+Data <- iris %>% filter(Species != "versicolor")
+
+Fit_LOGR <- glm(Species ~ Sepal.Length, family = binomial, data = Data)
+summary(Fit_LOGR)
+
+Pred_Prob <- predict(Fit_LOGR, type = "response")
+
+X <- model.matrix(Fit_LOGR)
+W <- diag(Pred_Prob*(1- Pred_Prob))
+
+Cov_unscaled <- solve(t(X) %*% W %*% X)
+# SE pri log reg:
+sqrt(diag(Cov_unscaled))
+```
+
+
+## Ocenjevanje z MNV
+
+```{r eval = F}
+Data <- ISLR::Default
+
+set.seed(123)
+Data <- Data[sample(1:nrow(Data), 1000), ]
+table(Data$default)
+Data$balance <- Data$balance/100
+# maksimiziramo torej p^30 * (1-p)^970, kjer je p = 1/(1+exp(-Xb))
+
+
+
+# NULL MODEL - samo intercept
+
+Fit_LOGR_Null <- glm(default ~ 1, data = Data, family = binomial)
+summary(Fit_LOGR_Null)
+
+# možnosti
+b0<- seq(-10, 0, by = 0.0001)
+
+# Modelska matrika
+X <- rep(1, nrow(Data))
+
+# Response
+Y <- as.integer(Data$default) - 1
+
+# Lin predictor
+LP <- X %*% t(b0)
+
+head(LP[, 1:10])
+
+p <- 1 / (1 + exp(-LP)) 
+rm(LP)
+
+
+pt <- apply(p, 2, function(x) Y * x + (1-Y) * (1-x)) # za vsako kombinacijo produkt p^30 * (1-p)^970
+rm(p)
+
+#head(pt[Y == 1, 1:100])
+
+# pri log mora biti res majhen p da bo -neskončno
+log(0.000000000000000001)
+
+#logML
+LogML <- apply(pt, 2, function(x) sum(log(x)))  # log likelihood
+min(-2 * LogML) # RESIDUAL DEVIANCE -2ll
+Fit_LOGR_Null$deviance # NULL DEVIANCE - SAMO INTERCEPT
+
+
+beta <- rbind(b0, "ML" = apply(pt, 2, prod), LogML)
+rm(pt)
+
+beta <- t(beta)
+
+
+formatC(beta[which.max(beta[, 2]), ])
+coef(Fit_LOGR_Null)
+
+library(tidyverse)
+beta <- as.data.frame(beta)
+
+beta %>% 
+  ggplot() +
+  geom_line(aes(x = b0, y = ML))
+
+# mogoče boljše
+beta %>% 
+  ggplot() +
+  geom_line(aes(x = b0, y = LogML))
+#ali
+beta %>% 
+  ggplot() +
+  geom_line(aes(x = b0, y = -2 * LogML))
+
+# DODAMO BALANCE
+
+Fit_LOGR <- glm(default ~ balance, data = Data, family = binomial)
+summary(Fit_LOGR)
+
+# možnosti
+b0 <- seq(-15, -8, by = 0.01)
+b1 <- seq(-1, 2, by = 0.01)
+beta <- t(expand.grid(b0, b1))  # dim = 2 x kombinacije
+
+# Modelska matrika
+X <- cbind(1, Data$balance) # dim n x 2
+
+# Response
+Y <- as.integer(Data$default) - 1
+
+# Lin predictor
+LP <- X %*% beta # dim n x kombinacije. za vsako kombinacijo izracunan LP
+
+head(LP[, 1:10])
+
+p <- 1 / (1 + exp(-LP)) 
+rm(LP)
+
+pt <- apply(p, 2, function(x) Y * x + (1-Y) * (1-x))  # p za 1 oz 1-p za 0
+rm(p)
+
+#logML
+LogML <- apply(pt, 2, function(x) sum(log(x)))  # log l
+min(-2 * LogML) # RESIDUAL DEVIANCE -2ll
+Fit_LOGR$deviance
+
+
+beta <- rbind(beta, ML = apply(pt, 2, prod), LogML) # za vsako kombinacijo produkt p^30 * (1-p)^970
+rm(pt)
+
+beta <- t(beta)
+
+
+formatC(beta[which.max(beta[, 3]), ])
+coef(Fit_LOGR)
+
+
+rgl::plot3d(x = beta[, 1, drop  = F], y = beta[, 2, drop = F], z = beta[, 3, drop = F])
+
+rgl::plot3d(x = beta[, 1, drop  = F], y = beta[, 2, drop = F], z = -2 *beta[, 4, drop = F])
+
+
+# še za brez intercept
+
+Fit_LOGR <- glm(default ~ -1 + balance, data = Data, family = binomial)
+summary(Fit_LOGR)
+
+# TUKAJ je Null deviance drugače !! Model je v tem primeru X = 0 => Y ~ Ber(1/2).. 
+- 2 * log((1/2)^1000)
+
+# možnosti
+b1 <- seq(-1, 1, by = 0.0001)
+
+# Modelska matrika
+X <- Data$balance
+
+# Response
+Y <- as.integer(Data$default) - 1
+
+# Lin predictor
+LP <- X %*% t(b1)
+
+head(LP[, 1:10])
+
+p <- 1 / (1 + exp(-LP)) 
+rm(LP)
+
+
+pt <- apply(p, 2, function(x) Y * x + (1-Y) * (1-x)) # za vsako kombinacijo produkt p^30 * (1-p)^970
+rm(p)
+
+
+#logML
+LogML <- apply(pt, 2, function(x) sum(log(x)))  # RESIDUAL DEVIANCE -2ll
+min(-2 *LogML) 
+Fit_LOGR$deviance
+
+
+beta <- rbind(b1, "ML" = apply(pt, 2, prod), LogML)
+rm(pt)
+
+beta <- t(beta)
+
+
+formatC(beta[which.max(beta[, 2]), ])
+coef(Fit_LOGR)
+
+beta <- as.data.frame(beta)
+
+beta %>% 
+  ggplot() +
+  geom_line(aes(x = b1, y = ML))
+
+# mogoče boljše
+beta %>% 
+  ggplot() +
+  geom_line(aes(x = b1, y = LogML))
+#ali
+beta %>% 
+  ggplot() +
+  geom_line(aes(x = b1, y = -2 * LogML))
+```
+
+### Izračun standardnih napak
+
+```{r eval = F}
+Pred_Prob <- predict(Fit_LOGR, type = "response")
+
+X <- model.matrix(Fit_LOGR)
+W <- diag(Pred_Prob*(1- Pred_Prob))
+
+Cov_unscaled <- solve(t(X) %*% W %*% X)
+# SE pri log reg:
+sqrt(diag(Cov_unscaled))
+```
+
+
+### Beta contour
+
+Funkcija logaritma verjetja je enaka
+
+$$
+l(\beta) = \sum{y  log\frac{\pi}{1-\pi} + log{(1-\pi})} =  \sum{y  X\beta - \log{(1 + e^{X\beta}})}
+$$
+Spodaj naredimo za $l(\beta_0, \beta_1)$
+
+```{r eval = F}
+Data <- ISLR::Default
+y <- Data$default <- as.numeric(Data$default) - 1
+x <- Data$balance
+
+Fit_LOGR <- glm(default ~ 1 + balance, data = Data, family = binomial)
+(s <- summary(Fit_LOGR))
+
+# shranim koeficiente in standardne napake
+b0h <- s$coefficients[1, 1]; se0h <- s$coef[1, 2]
+b1h <- s$coefficients[2, 1]; se1h <- s$coef[2, 2]
+
+# Vzamem +- 3 SE za bete
+b0seq <- seq(b0h - 3* se0h, b0h + 3 * se0h, length = 100)
+b1seq <- seq(b1h - 3* se1h, b1h + 3 * se1h, length = 100)
+
+df_Lik <- setNames(expand.grid(b0seq, b1seq), c("beta0", "beta1"))
+                   
+# Izračunam log lik za ocene
+f_ll <- function(b0, b1){
+  sum(y * (b0 + b1 * x)- log(1 + exp(b0 + b1 * x)))
+}
+
+v_f_ll <- Vectorize(f_ll, SIMPLIFY = TRUE)
+
+df_Lik$ll <- v_f_ll(df_Lik$beta0, df_Lik$beta1)
+
+p <-  df_Lik %>% 
+  ggplot(aes(x = beta0, y = beta1, z = ll)) +
+  stat_contour(aes(color = ..level..)) +
+  xlab(expression(beta[0])) +
+  ylab(expression(beta[1]))
+
+#ggplot_build(p)
+
+data<- ggplot_build(p)$data[[1]]
+
+indices <- setdiff(1:nrow(data), which(duplicated(data$level))) # distinct levels
+
+names(data)[names(data) == 'x'] <- 'beta0'
+names(data)[names(data) == 'y'] <- 'beta1'
+
+p + 
+  geom_text(aes(label=level, z = NULL), data=data[indices,])
+
+# ISLR: Po navadi taka slika, ko sta spremenljivki kolinearni. Maximum log lik dobimo pri beta0 med -10 in -11.5.. veliko možnosti, nismo sigurni v ocene (pri majhni spremembi v podatkih se lahko precej spremenijo koeficienti).. Težko loči vpliv intercepta in balance .
+
+```
+
+
+# ROS - Logistic Regression
+
+[https://avehtari.github.io/ROS-Examples/examples.html#13_Logistic_regression](Stran za poglavje)
+$qlogis(x)$ je logistična funkcija oz. $logit(x) = \log\frac{x}{1-x}$.
+`plogis(x)` je inverz logita $logit^{-1}(x) = \frac{1}{1 + e^{-x}} = \frac{e^x}{1 + e^{x}}$
+
+Pri logistični regresiji modeliramo verjetnost $\pi_i = P(Y_i = 1 | X) = logit^{-1}(X_i\beta)$. $X_i\beta$ je linearni prediktor, $g = logit$ je vezna funkcija med $\mu_i = E[Y_i] = \pi_i$ in linearnim prediktorjem: $logit(\pi_i) = X_i\beta$.
+
+```{r}
+curve(qlogis)
+par(mfrow = c(2,2))
+curve(plogis, from = -20, to = 20) # verjetnost
+curve(plogis(0.33 * x), from = -20, to = 20)
+curve(plogis(-2 + 0.33 * x), from = -20, to = 20)
+curve(plogis(2 + 3 * x), from = -20, to = 20)
+par(mfrow = c(1,1))
+```
+
+Pričakovana sprememba y pri fiksnem premiku x je odvisna od x! Največje razlike pri $p = 0,5$. V repih velike spremembe $x$ oz. $X\beta$ vodijo v vedno manjšo spremembo $\pi$. To pomeni, da v primeru majhnih $\pi$, so potrebne velike spremembe na logit skali za majhne spremembe v verjetnosti $\pi$.
+
+```{r}
+qlogis(0.5); qlogis(0.6) # 0.4 sprememba v logit (log odds) je sprememba prob iz 0.5 v 0.6
+qlogis(0.07); qlogis(0.1) # 0.4 sprememba v logit je sprememba prob iz 0.07 v 0.1
+qlogis(0.02); qlogis(0.03) # 0.4 sprememba v logit je sprememba prob iz 0.02 v 0.03
+```
+
+```{r}
+plogis(0); plogis(0.4) # sprememba iz logit = log odds = 0 v logit = 0.4
+plogis(3); plogis(3.4)
+plogis(-2.6); plogis(-2.2) 
+```
+
+
+#### Load data
+
+```{r eval = T}
+nes <-nes <- read.table(here("06_Test/Data", "NES.txt"), header=TRUE)
+head(nes)
+```
+
+Use first only data from 1992 and remove missing data
+
+```{r eval = T}
+ok <- nes$year==1992 & !is.na(nes$rvote) & !is.na(nes$dvote) & (nes$rvote==1 | nes$dvote==1)
+nes92 <- nes[ok,]
+```
+
+## A single predictor logistic regression
+
+#### Logistic regression of vote preference on income
+
+```{r}
+fit_1 <- stan_glm(rvote ~ income, family=binomial(link="logit"), data=nes92,
+                  refresh=0)
+print(fit_1)
+
+Fit_LOGR <- glm(rvote ~ income, family = binomial, data = nes92)
+summary(Fit_LOGR)
+```
+
+
+```{r}
+sims_1 <- as.matrix(fit_1) # ocene koeficientov iz vsake simulacije
+n_sims <- nrow(sims_1)
+curve(plogis(-1.4 + 0.3 * x), from = -20, to = 20, lwd = 2)
+for(j in sample(n_sims, 20)){
+  curve(plogis(sims_1[j, 1] + sims_1[j, 2] * x), col = "gray", lwd = 0.5, add = T)
+}
+```
+
+### 13.2
+
+Zaradi nelinearne povezave med spremembami $x$ in verjetnostmi $\pi$, je interpretacija koeficientov nekoliko zahtevnejša. Odločiti se moramo, pri katerih vrednostih $x$ interpretiramo spremembe na verjetnostni skali.
+
+Primer ocene $P(Y = 1)$ pri povprečni vrednosti x:
+
+```{r }
+plogis(-1.4 + 0.33* mean(nes92$income))
+plogis(coef(fit_1)[1] + coef(fit_1)[2] * mean(nes92$income))
+```
+
+Primer spremembe $p$ pri spremembi $x$ za 1 enoto okoli povprečja (x = 2 v x = 3):
+
+```{r}
+plogis(-1.4 + 0.33 * 3) - plogis(-1.4 + 0.33 * 2)
+```
+
+Največjo spremembo v $\pi$ pri spremembi $x$ za eno enoto dobimo pri $logit^{-1}(\beta_0 + \beta_1x) = 0,5$. Točko lahko dobimo tudi z iskanjem maksimuma prvega odvoda (kjer je najbolj strm). Izkaže se, da je to pri $\beta_1/4$. To pomeni, da lahko na tak način dobimo zgornjo mejo spremembe $\pi$ pri spremembi  $x$ za eno enoto. Aproksimacija bo zelo podobna le za $\pi$ blizu 0,5.
+
+```{r}
+coef(fit_1)
+```
+
+Interpretacija zgornjih koeficientov:
+
+- $\beta_0$ je 
+- Sprememba za 1 enoto v income poveča logaritem obetov podpore Busha (Y = 1) za 0,33
+
+
+### interpretacija koeficientov v smislu razmerij obetov
+
+Denimo, da je $p = P(Y = 1)$. Razmerje $O =\frac{P(Y = 1)}{P(Y = 0)} = \frac{p}{1-p}$ obeti.
+Obet 1 predstavlja verjetnosti $p =  1-p = 0,5$. Obet 0,5 predstavlja verjetnost $p = 1/3$, obet 2 pa verjetnost $p = 2/3$.
+
+Razmerje obetov definiramo kot $OR = O_1\ / \ O_2$. Enake vrednosti $OR$ lahko dobimo pri različnih spremembah $p$:
+- $\frac{0.67}{0.33} / \frac{0.5}{0.5}$ = `r (0.67/0.33) / 1`
+- $\frac{0.5}{0.5} / \frac{0.33}{0.67}$ = `r 1 / (0.33/0.67)`
+
+Primer:
+Imamo $OR = 2 = O_1 / O_2$. Sledi: $O_1 = 2 * O_2$. $p_1$ je lahko npr. $0.8$, $p_2$ pa 0.67. Lahko pa tudi $O_1$ in $O_2$ razpolovimo in dobimo $p_1 = 0.67$ in $p_2 = 0.5$. Torej, če obete podvojimo, verjetnost spremeni iz 2/3 v 4/5. Postopek lahko velikokrat ponovimo, verjetnost bo limitirala proti 1.
+
+Primer pri logistični regresiji:
+
+Predpostavimo preprost model s presečiščem in enim prediktorjem $logit(p) = \beta_0 + \beta_1 x$. Če x povečamo na x+1 je to enako, kot če bi na obe strani enačbe dodali $\beta_1$: $logit(p) + \beta_1 = \beta_0 + \beta_1 (x+1)$. Nato na obeh straneh uporabimo eksponentno transformacijo: $O * e^{\beta_1} = e^{\beta_0} e^{\beta_1 (x+1)}$. Torej, če se x poveča za eno enoto, se obeti povečajo za faktor $e^{\beta_1}$.
+Po domače: razmerje obetov met nekom, ki ima vrednost x+1 in drugim, ki ima vrednost x je:
+$e^{\beta_0 + \beta_1(x+1)} / e^{\beta_0 + \beta_1(x)} = e^{\beta_1}$
+
+
+
+#### Predictions
+
+Predict vote preference point estimate
+
+```{r }
+new <- data.frame(income=5)
+pred <- predict(fit_1, type="response", newdata=new)
+print(pred, digits=2)
+pred
+plogis(coef(fit_1)[1] + coef(fit_1)[2] * 5)
+plogis(predict(fit_1, type = "link", newdata = new))
+predict(Fit_LOGR, type="response", newdata=new)
+```
+
+Linear predictor with uncertainty
+
+```{r }
+linpred <- posterior_linpred(fit_1, newdata=new)
+head(linpred)
+print(c(mean(linpred), sd(linpred)), digits=2)
+```
+
+Expected outcome with uncertainty
+
+```{r }
+epred <- posterior_epred(fit_1, newdata=new)
+head(epred)
+print(c(mean(epred), sd(epred)), digits=2)
+
+mean(plogis(linpred))
+```
+
+
+Predictive distribution for a new observation
+
+```{r }
+postpred <- posterior_predict(fit_1, newdata=new)
+head(postpred)
+print(c(mean(postpred), sd(postpred)), digits=2)
+```
+
+#### Prediction given a range of input values
+
+```{r }
+new <- data.frame(income=1:5)
+pred <- predict(fit_1, type="response", newdata=new)
+linpred <- posterior_linpred(fit_1, newdata=new)
+head(linpred)
+epred <- posterior_epred(fit_1, newdata=new)
+head(epred)
+postpred <- posterior_predict(fit_1, newdata=new)
+head(postpred)
+```
+
+the posterior probability, according to the fitted model, that Bush
+was more popular among people with income level 5 than among people
+with income level 4
+
+```{r }
+mean(epred[,5] > epred[,4])
+```
+
+95\% posterior distribution for the difference in support for Bush,
+comparing people in the richest to the second-richest category
+
+```{r }
+quantile(epred[,5] - epred[,4], c(0.025, 0.975))
+```
+
+```{r}
+total <- apply(postpred, 1, sum) # koliko jih podpira Busha v vsaki simulaciji
+mean(total >= 3) # verketmpst da vsak tri (od petih) podpirajo Busha
+```
+
+### Logistična regresija s samo presečiščem
+
+Po izpeljavi funkcije največjega verjetja dobimo naslednjo formulo za presečišče v logit skali:
+
+$$
+\widehat{\beta}_0^{ML} = logit(\widehat{\pi})
+$$
+Oziroma z verjetnostni skali:
+$$
+logit^{-1}(\beta_0) = \widehat{\pi}
+$$
+
+
+```{r}
+y <- rep(c(0, 1), c(40, 10))
+simple <- data.frame(y)
+Fit <- glm(y ~ 1, family = binomial, data = simple)
+summary(Fit)
+qlogis(1/5) # presečišče beta0
+```
+
+Standardna napaka za presečišče enaka $\sqrt{0.2 * 0.8 / 50} = 0,06$. Spodaj dobimo podoben interval 0.2 +- 0,6.
+
+```{r}
+plogis(-1.3863)
+plogis(-1.3863 - 0.3536)
+plogis(-1.3863 + 0.3536)
+```
+
+Če v vzorcu ni nobenega y = 1, potem drugačna formula za standarno napako. Stran 225.
+
+### Logistična regresija z enim binarnim prediktorjem
+
+V tem primeru je to enako, kot če bi primerjali deleže v skupinah prediktorja.
+Spodaj je delež v prvi skupini enak 1/5, v drugi pa 1/3. Standardna napaka je 
+$$
+\sqrt{Var(\hat{\pi}_1 - \hat{\pi}_2)} = \sqrt{Var(\hat{\pi}_1) - Var(\hat{\pi}_2)} = 0.083
+$$
+
+```{r}
+x <- rep(c(0, 1), c(50, 60)) # Skupina
+y <- rep(c(0, 1, 0, 1), c(40, 10, 40, 20)) # v prvi delež 10/50, v drugi 20/60
+simple <- data.frame(x, y)
+fit <- glm(y ~ x, family = binomial, data = simple)
+summary(fit)
+# intercept velja za delež prve skupine
+plogis(-1.3863)
+plogis(-1.3863 + 0.6931) # delež slabih v drugi skupini
+
+pred <- predict(fit, newdata = data.frame(x = c(0, 1)), type = "response")
+pred[2] - pred[1] 
+```
+
+### Logistic priors
+
+Define a function running glm and stan_glm with simulated data<br>
+Arguments are the number of simulated observations, and prior
+parameters a and b.
+
+```{r }
+bayes_sim <- function(n, a=-2, b=0.8){ # a, b predpostavimo
+  x <- runif(n, -1, 1) # predpostavimo, da prihajajo iz te porazdelitve
+  z <- rlogis(n, a + b*x, 1) # z = Xb + eps (eps ~ Log)
+  y <- ifelse(z>0, 1, 0)
+  fake <- data.frame(x, y)
+  glm_fit <- glm(y ~ x, family = binomial(link = "logit"), data = fake)
+  stan_fit <- stan_glm(y ~ x, family = binomial(link = "logit"),
+     prior=normal(0.5, 0.5, autoscale=FALSE), data = fake)
+  display(glm_fit, digits=1)
+  print(stan_fit, digits=1)
+}
+```
+
+#### Fit models to an increasing number of observations
+
+```{r }
+set.seed(363852)
+#bayes_sim(0)
+bayes_sim(10) # glm ocene precej daleč od prior, tudi visok se, bayes pa blizu prior mean 0,5
+bayes_sim(100)
+bayes_sim(1000) # ko je n velik, prior nima več velikega vpliva
+```
+
+Ocena po Bayesu je nekje med prior in podatki. Pri velikih vzorcih je bolj proti podatkom, pri majhnih pa proti prior.
+
+### CV in log likelihood
+
+Pri logistični regresiji ne moremo predpostaviti aditivnih napak (sicer bi hitro prišli izven intervala [0, 1]).
+Pri bernoullijevi porazdelitvi ni porazdelitve napak, samo neznana verjetnost $p$. V splošnem ne obstaja skupna porazdelitev napak, saj je le-ta odvisna od vrednosti prediktorjev oz. enote $i$.
+Primer:
+$Y_i = \pi_i + e_i$, kjer je $\pi_i = P(Y = 1 | X_i)$. $Y_i$ bo bil enak 1 z verjetnostjo $\pi_i$ in napaka bo v tem primeru $1-\pi_i$; in enak 0 z verjetnostjo $1-\pi_i$ in napaka bo v tem primeru $0 - \pi_i$. Pomembna je odvisnost od $i$ !
+
+Pri ocenjevanju napovedi s štetjem na primer pravilno klasificiranih enot izgubimo informacijo, ki jo dobimo z napovedanimi verjetnostmi. Ena možnost je uporaba **Brier score**$\frac{1}{n}\sum_{i = 1}^n (p_i - y_i)^2$
+
+Log likelihood na novih točkah je:
+
+$$
+ll = \sum{y_i log(p_i) + (1-y_i) log(1-p_i)}
+$$
+Želimo čim večji $ll$ (log(1) = 0). 
+
++ Če na primer ne vemo nič in predpostavimo, da je $p_i = 0,5$, je $ll = log((1/2)^n) = n * log(1/2)$.
+
+```{r}
+nrow(nes92) * log(1/2)
+```
+
++ Če poznamo delež $p_1$ v vzorcu, lahko izračunamo $ll = n_1 * log(p_1) + n_0 * log(1-p_1)$. To je enako, kot če naredimo model s samo presečiščem:
+
+```{r}
+Fit_1a <- glm(rvote ~ 1, family = binomial, data = nes92)
+Pred_Prob_1a <- predict(Fit_1a, type = "response")
+y <- nes92$rvote
+(ll_1a <- sum(y*log(Pred_Prob_1a) + (1-y) * log(1 - Pred_Prob_1a)))
+sum(y == 1) * log(mean(y == 1)) + sum(y == 0) * log(mean(y == 0))
+Fit_1a$deviance
+-2 * ll_1a
+```
+
+Ocena za $\beta_0$ v modelu s samo presečiščem je $b_0 = log(\frac{\hat{\pi}}{1-\hat{\pi}})$. Sledi:
+$$
+ll = \sum(y_i b_0 - log(1+e^{b_0})) = \sum(y_i log(\frac{\hat{\pi}}{1-\hat{\pi}}) - log(1+\frac{\hat{\pi}}{1-\hat{\pi}})) = \sum(y_i log(\hat{\pi}) + (1-y_i) log(1-\hat{\pi}))
+$$
+
+Če dodamo samo presečišče, izboljšamo log score (ll) za $(817-796)/1176 = 0,018$ na enoto.
+
++ Če dodamo še `income` v model:
+
+```{r}
+Fit_1 <- glm(rvote ~ 1 + income, family = binomial, data = nes92)
+Pred_Prob_1 <- predict(Fit_1, type = "response")
+(ll_1 <- sum(y*log(Pred_Prob_1) + (1-y) * log(1 - Pred_Prob_1)))
+
+Fit_1$deviance
+-2 * ll_1
+```
+
+
+Če dodamo še `income`, izboljšamo log score (ll) za $(796-778)/1176 = 0,015$ na enoto.
+
+# Primer gradnje modela: vodnjaki v Bangladešu
+
+```{r eval = T}
+wells <- read.csv(here("06_Test/Data", "wells.csv"))
+head(wells)
+n <- nrow(wells)
+table(wells$switch)
+```
+
+## Null model
+
+#### Log-score for coin flipping
+
+```{r }
+prob <- 0.5
+round(log(prob)*sum(wells$switch) + log(1-prob)*sum(1-wells$switch),1)
+```
+
+#### Log-score for intercept model
+
+```{r }
+round(prob <- mean(wells$switch),2)
+round(log(prob)*sum(wells$switch) + log(1-prob)*sum(1-wells$switch),1)
+```
+
+## A single predictor
+
+#### Fit a model using distance to the nearest safe well
+
+```{r results='hide', eval = T}
+Fit_1 <- glm(switch ~ dist, family = binomial(link = "logit"), data=wells)
+summary(Fit_1)
+
+wells$dist100 <- wells$dist/100
+
+Fit_1a <- glm(switch ~ dist100, family = binomial(link = "logit"), data=wells)
+summary(Fit_1a)
+```
+
+
+#### LOO log score
+
+```{r eval = F}
+(loo1 <- loo(fit_1))
+```
+
+#### Histogram of distances
+
+```{r }
+hist(wells$dist, breaks=seq(0,10+max(wells$dist),10), freq=TRUE,
+     xlab="Distance (in meters) to nearest safe well", ylab="", main="", mgp=c(2,.5,0))
+
+p1 <- data.frame(x = wells$dist, y = wells$switch) %>% 
+  ggplot(aes(x = x, y = y)) +
+  geom_jitter(width = 0, height = 0.05) +
+  labs(
+    x = "Razdalja v metrih",
+    y = "Verjetnost zamenjave"
+  ) +
+  stat_function(fun = function(x) invlogit(coef(Fit_1)[1] + coef(Fit_1)[2] * x)) +
+  theme_bw()
+
+# data.frame(x = wells$dist, y = wells$switch) %>% 
+#   ggplot(aes(x = x, y = y)) +
+#   geom_point(position = position_jitter(w = 0, h = 0.05)) +
+#   labs(
+#     x = "Razdalja v metrih",
+#     y = "Verjetnost zamenjave"
+#   ) +
+#   theme_bw()
+
+p2 <- wells %>% 
+  ggplot(aes(x = dist)) +
+  geom_histogram(aes(fill = as.factor(switch)), position = "identity", alpha = 0.2) +
+  labs(
+    x = "Razdalja v metrih",
+    y = "",
+    fill = "Zamenjava"
+  )+
+  theme_bw()
+
+plot_grid(plotlist = list(p1, p2), nrow = 1)
+```
+
+Interpretacija:
++ Za nekoga, ki živi tik ob drugem vodnjaku (dist = 0), je ocenjena verjetnost zamenjave $logit^{-1}(0,61) = 0,65$
+
++ Lahko izračunamo razliko v verjetnosti pri spremembi `dist100` za 1 (100m) pri povprečni vrednosti `dist100` (0,48) tako, da izračunamo odvod $logit^{-1}$ v tej točki (naklon funkcije v tej točki). Odvajamo po x in dobimo $\frac{b\ e^{bx}}{(1+e^{bx})^2}$. Iz $bx = 0,61-0,62*0,48 = 0,31$ sledi, da je naklon tangente pri povprečni vrednosti `dist100` enak -0,15. Torej, za vsakih 100 metrov razdalje do najbližjega dobrega vodnjaka, se verjetnost zamenjave zmanjša za 15 odstotkov.
+
+#### Scale distance in meters to distance in 100 meters
+
+```{r }
+wells$dist100 <- wells$dist/100
+```
+
+#### Fit a model using scaled distance to the nearest safe well
+
+```{r results='hide'}
+fit_2 <- stan_glm(switch ~ dist100, family = binomial(link = "logit"), data=wells)
+```
+
+
+
+```{r }
+print(fit_2, digits=2)
+```
+
+#### LOO log score
+
+```{r eval = F}
+(loo2 <- loo(fit_2, save_psis = TRUE))
+```
+
+#### Plot model fit
+
+```{r }
+jitter_binary <- function(a, jitt=.05){
+  a + (1-2*a)*runif(length(a),0,jitt)
+}
+```
+    
+```{r }
+plot(c(0,max(wells$dist, na.rm=TRUE)*1.02), c(0,1),
+     xlab="Distance (in meters) to nearest safe well", ylab="Pr (switching)",
+     type="n", xaxs="i", yaxs="i", mgp=c(2,.5,0))
+curve(invlogit(coef(fit_1)[1]+coef(fit_1)[2]*x), lwd=1, add=TRUE)
+points(wells$dist, jitter_binary(wells$switch), pch=20, cex=.1)
+```
+
+
+#### Plot uncertainty in the estimated coefficients
+
+```{r }
+sims <- as.matrix(fit_2)
+par(pty="s")
+plot(sims[1:500,1], sims[1:500,2], xlim=c(.4,.8), ylim=c(-1,0),
+     xlab=expression(beta[0]), ylab=expression(beta[1]), mgp=c(1.5,.5,0),
+     pch=20, cex=.5, xaxt="n", yaxt="n")
+axis(1, seq(.4,.8,.2), mgp=c(1.5,.5,0))
+axis(2, seq(-1,0,.5), mgp=c(1.5,.5,0))
+```
+
+
+#### Plot uncertainty in the estimated predictions
+
+```{r }
+plot(c(0,max(wells$dist, na.rm=T)*1.02), c(0,1),
+     xlab="Distance (in meters) to nearest safe well", ylab="Pr (switching)",
+     type="n", xaxs="i", yaxs="i", mgp=c(2,.5,0))
+for (j in 1:20) {
+    curve (invlogit(sims[j,1]+sims[j,2]*x/100), lwd=.5,
+           col="darkgray", add=TRUE)
+}
+curve(invlogit(coef(fit_2)[1]+coef(fit_2)[2]*x/100), lwd=1, add=T)
+points(wells$dist, jitter_binary(wells$switch), pch=20, cex=.1)
+```
+
+
+## Two predictors
+
+#### Histogram of arsenic levels
+
+```{r }
+hist(wells$arsenic, breaks=seq(0,.25+max(wells$arsenic),.25), freq=TRUE,
+     xlab="Arsenic concentration in well water", ylab="", main="", mgp=c(2,.5,0))
+```
+
+
+#### Fit a model using scaled distance and arsenic level
+
+```{r results='hide'}
+Fit_3 <- glm(switch ~ dist100 + arsenic, family = binomial(link = "logit"),
+                  data=wells)
+summary(Fit_3)
+```
+
+Interpretacija:
+
++ Če primerjamo dva vodnjaka z enako stopnjo arzenika, se na vsakih dodatnih 100m doddaljenosti od varnega vodnjaka logaritem obetov zamenjave zmanjša za 0,9.
++ Če primerjamo dva enako oddaljena vodnjaka, se za vsako dodatno enoto arzenika logaritem obetov zamenjave poveča za 0,46.
+
++ Pravilo deli s 4: dodatnih 100m zmanjša verjetnost zamenjave za približno 0,9/4 = 0,22. Ena enota več arzenika poveča verjetnost zamenjave za približno 0,46/4 = 0,11.
+
+Opozorilo:
+Po absolutni vrednosti je koeficient za `dist100` večji od koeficienta za `arzenik`: pričakovali bi, da je tudi pomembnejši dejavnik za določanje verjetnosti zamenjave vodnjaka. Vendar so vrednosti `dist100` manj variabilne, potrebno je preveriti vpliv pri spremembi dejavnika za 1 standardno napako. Vemo tudi, da je velikost koeficienta odvisna od enote spremenljivke!
+
+```{r}
+sd(wells$dist100)
+sd(wells$arsenic)
+# torej so koeficienti za spremembo v velikosti 1 std odklona enaki
+-0.9 * sd(wells$dist100)
+0.46 * sd(wells$arsenic)
+
+#divide by 4
+-0.9 * sd(wells$dist100)/4
+0.46 * sd(wells$arsenic)/4
+```
+
+Opazimo, da se je ob vključitvi arzenika v model povečal tudi negativni vpliv oddaljenosti. 
+Razlog je lahko v tem, da imajo bolj oddaljeni vodnjaki tudi večje vrednosti arzenika.
+
+```{r}
+wells %>% 
+  ggplot(aes(x = dist100, y = arsenic)) +
+  geom_point(alpha = 0.1)
+
+cor(wells$arsenic, wells$dist100) 
+```
+
+
+#### LOO log score
+
+```{r eval = F}
+(loo3 <- loo(fit_3, save_psis = TRUE))
+```
+
+#### Compare models
+
+```{r eval = F}
+loo_compare(loo2, loo3)
+```
+
+#### Average improvement in LOO predictive probabilities<br>
+from dist100 to dist100 + arsenic
+
+```{r eval = F}
+pred2 <- loo_predict(fit_2, psis_object = loo2$psis_object)$value
+pred3 <- loo_predict(fit_3, psis_object = loo3$psis_object)$value
+round(mean(c(pred3[wells$switch==1]-pred2[wells$switch==1],pred2[wells$switch==0]-pred3[wells$switch==0])),3)
+```
+
+#### Plot model fits
+
+```{r }
+par(mfrow = c(1, 2))
+plot(c(0,max(wells$dist,na.rm=T)*1.02), c(0,1),
+     xlab="Distance (in meters) to nearest safe well", ylab="Pr (switching)",
+     type="n", xaxs="i", yaxs="i", mgp=c(2,.5,0))
+points(wells$dist, jitter_binary(wells$switch), pch=20, cex=.1)
+curve(invlogit(coef(fit_3)[1]+coef(fit_3)[2]*x/100+coef(fit_3)[3]*.50), lwd=.5, add=T)
+curve(invlogit(coef(fit_3)[1]+coef(fit_3)[2]*x/100+coef(fit_3)[3]*1.00), lwd=.5, add=T)
+text(50, .27, "if As = 0.5", adj=0, cex=.8)
+text(75, .50, "if As = 1.0", adj=0, cex=.8)
+
+plot(c(0,max(wells$arsenic,na.rm=T)*1.02), c(0,1),
+     xlab="Arsenic concentration in well water", ylab="Pr (switching)",
+     type="n", xaxs="i", yaxs="i", mgp=c(2,.5,0))
+points(wells$arsenic, jitter_binary(wells$switch), pch=20, cex=.1)
+curve(invlogit(coef(fit_3)[1]+coef(fit_3)[2]*0+coef(fit_3)[3]*x), from=0.5, lwd=.5, add=T)
+curve(invlogit(coef(fit_3)[1]+coef(fit_3)[2]*0.5+coef(fit_3)[3]*x), from=0.5, lwd=.5, add=T)
+text(.5, .78, "if dist = 0", adj=0, cex=.8)
+text(2, .6, "if dist = 50", adj=0, cex=.8)
+par(mfrow = c(1, 1))
+```
+
+# Working with logistic reg
+
+Different ways of displaying logistic regression. See Chapter 14 in
+Regression and Other Stories.
+
+
+#### Simulate fake data from logit model
+
+```{r}
+n <- 50 # velikost vzorca 
+a <- 2 # a v populaciji arbitrary
+b <- 3 # b v populaciji arbitrary
+x_mean <- -a/b  # invlogit oz. p (e^x/(1+e^x)) bo pri povprečnem x enak 0.5
+x_sd <- 4/b # ali je kak poseben razlog?  arbitrary,... da bo ok razmerje 0 in 1
+x <- rnorm(n, x_mean, x_sd)
+y <- rbinom(n, 1, invlogit(a + b*x))
+fake_1 <- data.frame(x, y)
+head(fake_1)
+
+data.frame(x = x, p = invlogit(a + b*x)) %>% 
+  ggplot(aes(x = x, y = p)) +
+  geom_point() +
+  geom_vline(xintercept = mean(x)) +
+  geom_hline(yintercept = 0.5)
+```
+
+#### Fit the model and save the coefficient estimates
+
+```{r }
+#fit_1 <- stan_glm(y ~ x, family=binomial(link="logit"), data=fake_1, refresh=0)
+fit_1 <- glm(y ~ x, family=binomial(link="logit"), data=fake_1)
+a_hat <- coef(fit_1)[1]
+b_hat <- coef(fit_1)[2]
+```
+
+#### Graph data and underying and fitted logistic curves
+
+```{r }
+shifted <- function(a, delta=0.008) return(ifelse(a==0, delta, ifelse(a==1, 1 - delta, a)))
+```
+
+```{r }
+par(mar=c(3,3,2,1), mgp=c(1.5,.5,0), tck=-.01)
+plot(x, shifted(y), ylim=c(0, 1), xlab="x", ylab="y", yaxs="i", pch=20)
+curve(invlogit(a + b*x), add=TRUE, col="gray30")
+curve(invlogit(a_hat + b_hat*x), add=TRUE, lty=2, col="gray30")
+x0 <- (1.5 - a) / b
+text(x0, invlogit(1.5), paste("   True curve,   \n   y = invlogit(", round(a, 1), " + ", round(b, 1), "x)   ", sep=""), cex=.9, col="gray30",
+  adj=if (a_hat + b_hat*x0 > 1.5) 0 else 1)
+x0 <- (-1.5 - a_hat) / b_hat
+text(x0, invlogit(-1.5), paste("   Fitted curve,   \n   y = invlogit(", round(a_hat, 1), " + ", round(b_hat, 1), "x)   ", sep=""), cex=.9, col="gray30",
+  adj=if (a + b*x0 > -1.5) 0 else 1)
+```
+
+
+#### Binned plot
+
+Koristen za vizualizacijo vzorcev v podatkih.
+
+```{r }
+K <- 5
+bins <- as.numeric(cut(x, K))
+x_bar <- rep(NA, K)
+y_bar <- rep(NA, K)
+for (k in 1:K){
+  x_bar[k] <- mean(x[bins==k])
+  y_bar[k] <- mean(y[bins==k])
+}
+```
+
+```{r }
+par(mar=c(3,3,2,1), mgp=c(1.5,.5,0), tck=-.01)
+plot(x, shifted(y), ylim=c(0, 1), xlab="x", ylab="y", yaxs="i", pch=20, cex=.8, main="Data and binned averages", cex.main=.9, col="gray50")
+points(x_bar, shifted(y_bar, 0.02), pch=21, cex=1.5)
+```
+
+
+### Logistic regression as function of two predictors
+
+```{r }
+n <- 100
+beta <- c(2, 3, 4) # arbitrary choice of true coefficients in the model
+x1 <- rnorm(n, 0, 0.4) # somewhat arbitary choice of scale of data, set so there will be a good mix of 0's and 1's
+x2 <- rnorm(n, -0.5, 0.4)
+y <- rbinom(n, 1, invlogit(cbind(rep(1, n), x1, x2) %*% beta))
+fake_2 <- data.frame(x1, x2, y)
+head(fake_2)
+```
+
+#### Fit the model and save the coefficient estimates
+
+```{r }
+#fit_2 <- stan_glm(y ~ x1 + x2, family=binomial(link="logit"), data=fake_2, refresh=0)
+fit_2 <- glm(y ~ x1 + x2, family=binomial(link="logit"), data=fake_2)
+(beta_hat <- coef(fit_2))
+```
+
+#### Graph data and discrimination lines
+
+$P(Y = 1) = 0,5$ bo veljalo, ko bo $b_0 + b_1 x_1 + b_2 x_ 2 = logit(0,5) = log(1) = 0$ oziroma na premici $x_2 = -b_0 / b_2 - b_1 / b_2 * x_1$.
+
+$P(Y = 1) = 0,9$ bo veljalo, ko bo $b_0 + b_1 x_1 + b_2 x_ 2 = logit(0,9)$ oziroma na premici $x_2 = logit(0,9) / b_2 -b_0 / b_2 - b_1 / b_2 * x_1$.
+
+Interpretacija: Za vrednosti $x_1, x_2$ blizu premice $x_2 = -b_0 / b_2 - b_1 / b_2 * x_1$ pričakujemo, da bo približno polovica y 0 in polovica y 1. Za vrednosti blizu premice $b_0 + b_1 x_1 + b_2 x_ 2 = logit(0,9)$ pa pričakujemo, da bo $90\ \%$ y enakih 1 in $10\ \%$ enakih 0. Podatki (y) postajajo z oddaljanjem od sredinske premice vedno bolj homogeni. To je tukaj še posebej opazno, ker so podatki simulirani v skladu z modelom.
+
+```{r }
+par(mar=c(3,3,2,1), mgp=c(1.5,.5,0), tck=-.01)
+plot(x1, x2, bty="l", type="n", main="Data and 10%, 50%, 90% discrimination lines\nfrom fitted logistic regression", cex.main=.9) 
+points(x1[y==0], x2[y==0], pch=20)  # dots
+points(x1[y==1], x2[y==1], pch=21) # circles
+abline(-beta[1]/beta[3], -beta[2]/beta[3]) # P(Y = 1) = 0.5 50%
+abline((logit(0.9) - beta[1])/beta[3], -beta[2]/beta[3], lty=2) # 90 %
+abline((logit(0.1) - beta[1])/beta[3], -beta[2]/beta[3],  lty=2) # 10 %
+```
+
+
+## Interaction
+
+#### Fit a model using scaled distance, arsenic level, and an interaction
+
+refresh (integer) can be used to control how often the progress of the sampling is reported (i.e. show the progress every refresh iterations). By default, refresh = max(iter/10, 1). The progress indicator is turned off if refresh <= 0.
+
+```{r results='hide'}
+# fit_4 <- stan_glm(switch ~ dist100 + arsenic + dist100:arsenic,
+#                   family = binomial(link="logit"), data = wells, refresh = 0) 
+fit_4 <- glm(switch ~ dist100 + arsenic + dist100:arsenic,
+                  family = binomial(link="logit"), data = wells)
+summary(fit_4)
+```
+
+Interpretacija:
+
+Spomnimo: koeficienti so na logit skali (sprememba x za 1 pomeni, da prištejemo $b_1$ k $logit(\pi)$ oziroma pomnožimo obete z $e^{b_1}$)
+
+Trik: interpretiramo pri srednjih vrednostih spremenljivk `dist100` in `arsenic` (0,48 in 1,66) in koeficient delimo s 4, da dobimo približno razliko na verjetnostni skali!
+
++ Namesto interpretacije presečišča (velja le, ko so prediktorji lahko enaki 0), interpretiramo pri povprečnih vrednostih prediktorjev, tj. $logit^{-1}(-0,15 -0,58*0,48+0,56*1,66 - 0,18*0,48*1,66) = 0,59$;
++ Koeficient za `dist100`: primerjamo dva vodnjaka, ki sta oddaljena za 1 (100m), če je nivo arzenika enak 0! Zato ponovno interpretiramo pri srednji vrednosti arzenika (1,66).
+ $logit(p) = b_0 + b_1 dist100 + b_2 1,66 + b_3\ 1,66\ dist100 = 0,78 -0,88\ dist100$
+ 
+```{r}
+data.frame(x = wells$dist100, y = invlogit(0.78 - 0.88 * wells$dist100)) %>% 
+  ggplot(aes(x = x, y = y)) +
+  geom_point() +
+  geom_point(aes(y = invlogit(1.33 - 1.06 * wells$dist100)), col = "red") + # če arzenik povp+1
+  labs(
+    x = "dist100",
+    y = "P(zamenja | povprečen arsenic)"
+  ) +
+  geom_vline(aes(xintercept = mean(x))) +
+  theme_bw()
+
+# deli s 4: pri p = 0.5
+-0.88 / 4
+invlogit(0.78 - 0.88 * 0.8) - invlogit(0.78 - 0.88 * 1.8)
+
+# pri povprečnem dist100
+invlogit(0.78 - 0.88 * mean(wells$dist100)) - invlogit(0.78 - 0.88 * mean(wells$dist100 + 1))
+```
+
++ Koeficient za interakcijo: En način: za vsako dodatno enoto arzenika se koeficient za razdaljo zmanjša za 0,18. Pri povprečni vrednosti arzenika je koeficient $-0,88$, za vsako enoto arzenika se še zmanjša. Interakcija pove, da je razdalja vse bolj pomembna dejavnik za gospodinjstva z visokimi stopnjami arzenika (veča se koeficient v absolutnem smislu). 
+Pazi: Večji kot bo arzenik, manjši bo $b_1$, manjši bo $e^{b_1}$, manjša bo razlika med razmerjem obetov (odds ratio) pri spremembi `dist100` za ena. Razmerje obetov pa ne pove nič o verjetnostih ! Pri verjetnostih je potrebno upoštevati še presečišče - arzenik poveča intercept (glej rdečo funkcijo). $\pi(x) = \frac{e^{\beta^T x}}{1 + e^{\beta^Tx}}$
+
+```{r}
+exp(-1.06)
+exp(1.33 - 1.06 * 2) / exp(1.33 - 1.06 * 1)
+exp(-0.88)
+exp(0.78 - 0.88 * 2) / exp(0.78 - 0.88 * 1)
+```
+
+
+#### LOO log score
+
+```{r eval = F}
+(loo4 <- loo(fit_4))
+```
+
+#### Compare models
+
+```{r eval = F}
+loo_compare(loo3, loo4)
+```
+
+#### Centering the input variables
+
+Dobimo iste koeficiente kot smo dobili prej pri interpretaciji. Vsi koeficienti razen interakcije se spremenijo.
+
+```{r }
+wells$c_dist100 <- wells$dist100 - mean(wells$dist100)
+wells$c_arsenic <- wells$arsenic - mean(wells$arsenic)
+```
+
+```{r results='hide'}
+#fit_5 <- stan_glm(switch ~ c_dist100 + c_arsenic + c_dist100:c_arsenic,
+#                 family = binomial(link="logit"), data = wells)
+fit_5 <- glm(switch ~ c_dist100 + c_arsenic + c_dist100:c_arsenic,
+                  family = binomial(link="logit"), data = wells)
+summary(fit_5)
+```
+
+
+
+#### Plot model fits
+
+Gledamo različne oblike krivulj...
+Interakcija je opazna pri visokih razdaljah od varnega vodnjaka, kjer razlika v arzeniku nima več toliko vpliva na verjetnost zamenjave. Interakcija se najbolj vidi na teh mestih in na teh mestih je zelo malo enot. Poleg tega je statistična značilnost vprašljiva in tudi ne izboljša veliko napovedi modela. Zato mogoče boljše kar brez.
+
+```{r }
+plot(c(0,max(wells$dist,na.rm=T)*1.02), c(0,1),
+     xlab="Distance (in meters) to nearest safe well", ylab="Pr (switching)",
+     type="n", xaxs="i", yaxs="i", mgp=c(2,.5,0))
+points(wells$dist, jitter_binary(wells$switch), pch=20, cex=.1)
+curve(invlogit(coef(fit_4)[1]+coef(fit_4)[2]*x/100+coef(fit_4)[3]*.50+coef(fit_4)[4]*x/100*.50), lwd=.5, add=T)
+curve(invlogit(coef(fit_4)[1]+coef(fit_4)[2]*x/100+coef(fit_4)[3]*1.00+coef(fit_4)[4]*x/100*1.00), lwd=.5, add=T)
+text (50, .29, "if As = 0.5", adj=0, cex=.8)
+text (75, .50, "if As = 1.0", adj=0, cex=.8)
+```
+
+
+```{r }
+plot(c(0,max(wells$arsenic,na.rm=T)*1.02), c(0,1),
+     xlab="Arsenic concentration in well water", ylab="Pr (switching)",
+     type="n", xaxs="i", yaxs="i", mgp=c(2,.5,0))
+points(wells$arsenic, jitter_binary(wells$switch), pch=20, cex=.1)
+curve(invlogit(coef(fit_4)[1]+coef(fit_4)[2]*0+coef(fit_4)[3]*x+coef(fit_4)[4]*0*x), from=0.5, lwd=.5, add=T)
+curve(invlogit(coef(fit_4)[1]+coef(fit_4)[2]*0.5+coef(fit_4)[3]*x+coef(fit_4)[4]*0.5*x), from=0.5, lwd=.5, add=T)
+text (.5, .78, "if dist = 0", adj=0, cex=.8)
+text (2, .6, "if dist = 50", adj=0, cex=.8)
+```
+
+
+```{r}
+anova(Fit_3, fit_4)
+
+Fit_3$deviance - fit_4$deviance
+pchisq(Fit_3$deviance - fit_4$deviance, df = 1, lower.tail = F)
+```
+
+
+## More predictors
+
+#### Adding social predictors
+
+```{r results='hide', eval = T}
+#fit_6 <- stan_glm(switch ~ dist100 + arsenic + educ4 + assoc,
+#                  family = binomial(link="logit"), data = wells)
+fit_6 <- glm(switch ~ dist100 + arsenic + educ4 + assoc,
+                  family = binomial(link="logit"), data = wells)
+summary(fit_6)
+```
+
+
+
+
+#### LOO log score
+
+```{r eval = F}
+(loo6 <- loo(fit_6))
+```
+
+#### Compare models
+
+```{r eval = F}
+loo_compare(loo4, loo6)
+```
+
+#### Remove assoc
+
+```{r results='hide', eval = T}
+# fit_7 <- stan_glm(switch ~ dist100 + arsenic + educ4,
+#                   family = binomial(link="logit"), data = wells)
+fit_7 <- glm(switch ~ dist100 + arsenic + educ4,
+                  family = binomial(link="logit"), data = wells)
+summary(fit_7)
+anova(Fit_3, fit_7, test = "LRT")
+```
+
+
+#### LOO log score
+
+```{r eval = F}
+(loo7 <- loo(fit_7))
+```
+
+#### Compare models
+
+```{r eval = F}
+loo_compare(loo4, loo7)
+loo_compare(loo6, loo7)
+```
+
+#### Add interactions with education
+
+
+```{r results='hide', eval = T}
+wells$c_educ4 <- wells$educ4 - mean(wells$educ4)
+wells$c_dist100 <- wells$dist100 - mean(wells$dist100)
+wells$c_arsenic <- wells$arsenic - mean(wells$arsenic)
+fit_8 <- stan_glm(switch ~ c_dist100 + c_arsenic + c_educ4 +
+                      c_dist100:c_educ4 + c_arsenic:c_educ4,
+                  family = binomial(link="logit"), data = wells)
+Fit_8 <- glm(switch ~ c_dist100 + c_arsenic + c_educ4 +
+                      c_dist100:c_educ4 + c_arsenic:c_educ4,
+                  family = binomial(link="logit"), data = wells)
+summary(Fit_8)
+anova(Fit_3, Fit_8, test = "LRT")
+anova(fit_7, Fit_8, test = "LRT")
+```
+
+
+#### LOO log score
+
+```{r eval = F}
+(loo8 <- loo(fit_8, save_psis=TRUE))
+```
+
+#### Compare models
+
+```{r eval = F}
+loo_compare(loo3, loo8)
+loo_compare(loo7, loo8)
+```
+
+#### Average improvement in LOO predictive probabilities<br>
+from dist100 + arsenic to dist100 + arsenic + educ4 + dist100:educ4 + arsenic:educ4
+
+```{r eval  =F}
+pred8 <- loo_predict(fit_8, psis_object = loo8$psis_object)$value
+round(mean(c(pred8[wells$switch==1]-pred3[wells$switch==1],pred3[wells$switch==0]-pred8[wells$switch==0])),3)
+```
+
+#### Predictive simulation
+
+```{r}
+fit <- stan_glm(switch ~ dist100, family = binomial, data = wells)
+sims <- as.matrix(fit) %>% magrittr::set_colnames(c("b0", "b1"))
+n_sims <- nrow(sims)
+
+as.data.frame(sims) %>% 
+  ggplot(aes(x = b0, y = b1))+
+  geom_point() +
+  labs(
+    x = expression(beta[0]),
+    y = expression(beta[1])
+  )
+
+
+plot(wells$dist100, wells$switch)
+for(s in 1:20){
+  curve(invlogit(sims[s, 1] + sims[s, 2] * x), add = TRUE, col = "gray", lwd = .5)
+}
+curve(invlogit(mean(sims[, 1]) + mean(sims[, 2]) * x), add = TRUE, lwd = 2)
+```
+
+#### Using the binomial distribution
+
+```{r}
+X_new <- cbind(1, wells$dist100[1:10] + runif(10, 0, 2))
+n_new <- nrow(X_new)
+y_new <- array(NA, c(n_sims, n_new))
+
+for(s in 1:n_sims){
+  p_new <- invlogit(X_new %*% sims[s, ])
+  y_new[s, ] <- rbinom(n_new, 1, p_new)
+}
+
+# ocenjene povprečne zamenjave za teh 10 novih x_new
+colMeans(y_new)
+
+# s koeficienti modela bi dobil precej podobno:
+as.numeric(invlogit(X_new %*% coef(fit)))
+```
+
+#### Using the latent logistic distribution
+
+Gostota verjetnosti logistične porazdelitve. Logistična porazdelitev je porazdelitev z dolgim repom.
+
+```{r}
+curve(dlogis(x), from = -5, to = 5, ylim = c(0,.5))
+curve(dnorm(x), from = -5, to = 5, add = T, col = "red")
+
+rlogis(10)
+#ali
+logit(runif(10)) # !!logit je kvantilna funkcija logistične reg. P(X < x) = p !!
+
+# vsi LP so relativno majhni, r logis bo kar imel efekt..
+range(model.matrix(fit) %*% coef(fit))
+
+#malo drugače na skali obetov
+exp(range(model.matrix(fit) %*% coef(fit)))
+```
+
+```{r}
+y_new <- array(NA, c(n_sims, n_new))
+
+for(s in 1:n_sims){
+  eps_new <- logit(runif(n_new, 0, 1)) #rlogis(n_new)
+  z_new <- X_new %*% sims[s, ] + eps_new
+  y_new[s, ] <- ifelse(z_new > 0, 1, 0)
+}
+
+colMeans(y_new)
+# s koeficienti modela bi dobil precej podobno:
+as.numeric(invlogit(X_new %*% coef(fit)))
+```
+
+
+### 14.4 Average predictive comparisons on the probability scale
+
+Logistična regresija je linearna v parametrih (na logit skali) in nelinearna v zvezi z odzivno spremenljivko (na verjetnostni skali).
+
+Pogosto je sprememba v x za 1 enoto ovrednotena na povprečjih ostalih spremenljivk. Primerno, če x ni npr. bimodalna. 
+Lahko se uporabi npr. povprečno spremembo v x na enoto (povprečno po vseh vrednostih ostalih spremenljivk)
+
+#### Primer
+
+
+```{r, eval = T}
+fit_7 <- stan_glm(switch ~ dist100 + arsenic + educ4, family = binomial, data = wells)
+print(fit_7, digits = 2)
+```
+
+Primerjamo gospodinjstvo z dist100 = 0 in dist100 = 1, pri enakih vrednostih ostalih spremenljivk.
+
+```{r}
+b <- coef(fit_7)
+hi <- 1
+lo <- 0
+delta <- invlogit(b[1] + b[2] * hi + b[3] * wells$arsenic + b[4] * wells$educ4) - 
+  invlogit(b[1] + b[2] * lo + b[3] * wells$arsenic + b[4] * wells$educ4)
+mean(delta)
+```
+
+Razlika je 21 odstotnih točk.
+V povprečju je 21$\%$ manj možnosti za zamenjavo za gospodinjstva oddaljena 100m od najbližjega varnega vodnjaka.
+
+```{r}
+b <- coef(fit_7)
+hi <- 1
+lo <- 0.5
+delta <- invlogit(b[1] + b[2] * wells$dist100 + b[3] * hi + b[4] * wells$educ4) - 
+  invlogit(b[1] + b[2] * wells$dist100 + b[3] * lo + b[4] * wells$educ4)
+mean(delta)
+
+
+# 0 let proti 12 let šole
+hi <- 3
+lo <- 0
+delta <- invlogit(b[1] + b[2] * wells$dist100 + b[3] * wells$arsenic + b[4] * hi) - 
+  invlogit(b[1] + b[2] * wells$dist100 + b[3] * wells$arsenic + b[4] * lo)
+mean(delta)
+```
+
+Z interakcijami. 
+
+```{r}
+print(fit_8, digits = 2)
+b <- coef(fit_8)
+# 0 let proti 12 let šole
+hi <- 1
+lo <- 0
+delta <- invlogit(b[1] + b[2] * hi + b[3] * wells$c_arsenic + b[4] * wells$c_educ4 +
+                    b[5] * hi * wells$c_educ4 + b[6] * wells$c_arsenic*wells$c_educ4) - 
+  invlogit(b[1] + b[2] * lo + b[3] * wells$c_arsenic + b[4] * wells$c_educ4 +
+                    b[5] * lo * wells$c_educ4 + b[6] * wells$c_arsenic*wells$c_educ4)
+mean(delta)
+```
+
+### 14.5 Residuals for discrete-data regression
+
+Kot pri linearni regresiji lahko tudi pri logistični regresiji definiramo ostanke na sledeč način:
+$$
+r_i = y_i - E[y_i|X_i] = y_i - logit^{-1}(X_i\beta)
+$$
+
+Ostanki glede na ocenjeno verjetnost zamenjave ne podajo nič zanimivega:
+
+```{r}
+pred_8 <- predict(Fit_8, type = "response")
+plot(x = pred_8, y = wells$switch - pred_8)
+```
+
+Boljši spodnji prikaz binned residuals. Pričakovali bi sicer da bi jih samo 5% bilo zunaj, v resnici pa jih je 5/40 = 12.5 %
+
+```{r}
+#quantile(predict(Fit_8, type = "response"), probs = seq(0.025, 1, by = 0.025))
+
+data.frame(x = pred_8, y = wells$switch - pred_8) %>% 
+  mutate(
+    G = ggplot2::cut_number(x, 40)
+  ) %>% 
+  group_by(G) %>% 
+  summarise(
+    muprob = mean(x),
+    mures = mean(y),
+    binsize = n(),
+    se = sd(y) / sqrt(binsize)
+  ) %>% 
+  ggplot(aes(x = muprob, y = mures)) +
+  geom_point() +
+  geom_line(aes(y = 2 * se)) +
+  geom_line(aes(y = -2 * se)) +
+  theme_bw()
+
+
+# enako spodaj
+arm::binned.resids(pred_8, wells$switch - pred_8, nclass = 40)
+```
+
+Enako lahko naredimo povprečen ostanek po skupinah glede na prediktorje:
+
+```{r}
+p1 <- data.frame(x = wells$dist, y = wells$switch - pred_8) %>% 
+  mutate(
+    G = ggplot2::cut_number(x, 40)
+  ) %>% 
+  group_by(G) %>% 
+  summarise(
+    muprob = mean(x),
+    mures = mean(y),
+    binsize = n(),
+    se = sd(y) / sqrt(binsize)
+  ) %>% 
+  ggplot(aes(x = muprob, y = mures)) +
+  geom_point() +
+  geom_line(aes(y = 2 * se)) +
+  geom_line(aes(y = -2 * se)) +
+  theme_bw()
+
+p2 <- data.frame(x = wells$arsenic, y = wells$switch - pred_8) %>% 
+  mutate(
+    G = ggplot2::cut_number(x, 40)
+  ) %>% 
+  group_by(G) %>% 
+  summarise(
+    muprob = mean(x),
+    mures = mean(y),
+    binsize = n(),
+    se = sd(y) / sqrt(binsize)
+  ) %>% 
+  ggplot(aes(x = muprob, y = mures)) +
+  geom_point() +
+  geom_line(aes(y = 2 * se)) +
+  geom_line(aes(y = -2 * se)) +
+  theme_bw()
+
+plot_grid(plotlist = list(p1, p2), nrow = 2)
+```
+
+Problem pri majhnih vrednostih Arsenic (spodnji graf)
+
+## Transformation of variable
+
+V grafu ostankov za Arsenic lahko vidimo, da na začetku naraščajo in kasneje padajo. Ker je Arsenic pozitivna, je smiselna logaritemska transformacija. Smiseln bi lahko bil tudi kvadratni člen.
+
+
+#### Fit a model using scaled distance and log arsenic level
+
+```{r }
+wells$log_arsenic <- log(wells$arsenic)
+```
+
+```{r results='hide'}
+# fit_3a <- stan_glm(switch ~ dist100 + log_arsenic, family = binomial(link = "logit"),
+#                    data = wells)
+fit_3a <- glm(switch ~ dist100 + log_arsenic, family = binomial(link = "logit"),
+                   data = wells)
+summary(fit_3a)
+```
+
+#### LOO log score
+
+```{r }
+#(loo3a <- loo(fit_3a))
+```
+
+#### Compare models
+
+```{r }
+#loo_compare(loo3, loo3a)
+```
+
+#### Fit a model using scaled distance, log arsenic level, and an interaction<br>
+
+```{r results='hide'}
+# fit_4a <- stan_glm(switch ~ dist100 + log_arsenic + dist100:log_arsenic,
+#                   family = binomial(link = "logit"), data = wells)
+fit_4a <- glm(switch ~ dist100 + log_arsenic + dist100:log_arsenic,
+                  family = binomial(link = "logit"), data = wells)
+summary(fit_4a)
+```
+
+
+#### LOO log score
+
+```{r }
+#(loo4a <- loo(fit_4a))
+```
+
+#### Compare models
+
+```{r }
+#loo_compare(loo3a, loo4a)
+```
+
+#### Add interactions with education
+
+```{r }
+wells$c_log_arsenic <- wells$log_arsenic - mean(wells$log_arsenic)
+```
+
+```{r results='hide'}
+# fit_8a <- stan_glm(switch ~ c_dist100 + c_log_arsenic + c_educ4 +
+#                       c_dist100:c_educ4 + c_log_arsenic:c_educ4,
+#                   family = binomial(link="logit"), data = wells)
+fit_8a <- glm(switch ~ c_dist100 + c_log_arsenic + c_educ4 +
+                      c_dist100:c_educ4 + c_log_arsenic:c_educ4,
+                  family = binomial(link="logit"), data = wells)
+summary(fit_8a)
+```
+
+
+```{r}
+pred_8 <- predict(fit_8a, type = "response")
+plot(x = pred_8, y = wells$switch - pred_8)
+```
+
+```{r}
+p2 <- data.frame(x = wells$arsenic, y = wells$switch - pred_8) %>% 
+  mutate(
+    G = ggplot2::cut_number(x, 40)
+  ) %>% 
+  group_by(G) %>% 
+  summarise(
+    muprob = mean(x),
+    mures = mean(y),
+    binsize = n(),
+    se = sd(y) / sqrt(binsize)
+  ) %>% 
+  ggplot(aes(x = muprob, y = mures)) +
+  geom_point() +
+  geom_line(aes(y = 2 * se)) +
+  geom_line(aes(y = -2 * se)) +
+  theme_bw()
+```
+
+### Error rate and comparison to the null model
+
+Ni najboljši povzetek, saj ne razloči med napovedjo z verjetnostjo 0,9 in 0,6.
+```{r}
+(error_rate <- mean((pred_8 > 0.5 & wells$switch == 0) | (pred_8 < 0.5 & wells$switch == 1)))
+```
+
+Če je dogodek redek, je predikcija na meji $0,5$ slaba in je bolj primerno izbrati nižjo mejo za klasifikacijo.
+
+## 14.6 Problemi z obstojem rešitev
+
++ Če so prediktorji kolinearni, ne moremmo posebej ocenjevati parametrov
++ Če pri nekem prediktorju obstaja točna meja med y = 0 in y = 1. Npr za vse vrednosti nad x = c je y = 1, za vse manjše pa y = 0. Koeficient je $+-$ neskončno (navpičen skok)
++ Enako kot zgoraj, če neka kombinacija prediktorjev naredi popolno ločitev, bo vsaj en koeficient teh prediktorjev bil ocenjen kot neskončno.
+
+Pri manjših podatkih se lahko zgodi da dobimo skupine s popolno ločitvijo..
+
+```{r}
+x <- rnorm(100)
+y <- ifelse(x > 0, 1, 0)
+fit <- glm(y ~ x, family = binomial)
+summary(fit)
+
+plot(x, y)
+abline(v = 0)
+```
+
+```{r eval = T}
+nes <-nes <- read.table(here("06_Test/Data", "NES.txt"), header=TRUE)
+head(nes)
+```
+
+Use first only data from 1992 and remove missing data
+
+```{r eval = T}
+ok <- nes$year==1992 & !is.na(nes$rvote) & !is.na(nes$dvote) & (nes$rvote==1 | nes$dvote==1)
+nes92 <- nes[ok,]
+```
+
+#### Illustrate nonidentifiability of logistic regression<br>
+Use "black" as a predictor (nonidentifiability in 1964)
+
+```{r results='hide'}
+yrs <- seq(1960, 1964, 1968, 1972)
+n_yrs <- length(yrs)
+fits_2 <- array(NA, c(n_yrs, 4, 2, 2), dimnames <- list(yrs, c("Intercept", "female", "black", "income"), c("coef", "se"), c("glm", "bayes")))
+ok <- (!is.na(nes$rvote) & !is.na(nes$female) & !is.na(nes$black) & !is.na(nes$income))
+for (j in 1:n_yrs){
+  print(yrs[j])
+  fit_glm <- glm(rvote ~ female + black + income, subset=(year==yrs[j]),
+                 family=binomial(link="logit"), data=nes[ok,])
+  fits_2[j,,1,1] <- coef(fit_glm)
+  fits_2[j,,2,1] <- se.coef(fit_glm)
+  fit_bayes <- stan_glm(rvote ~ female + black + income, subset=(year==yrs[j]),
+                        family=binomial(link="logit"), data=nes[ok,],
+                        warmup = 500, iter = 1500, refresh = 0, 
+                        save_warmup = FALSE, cores = 1, open_progress = FALSE)
+  fits_2[j,,1,2] <- coef(fit_bayes)
+  fits_2[j,,2,2] <- se(fit_bayes)
+  display(fit_glm)
+  print(fit_bayes)
+}
+```
+
+#### Plot illustration on nonidentifiability of logistic regression
+
+```{r fig.width=9, fig.height=6}
+par(mfrow=c(2,5), mar=c(3,3,0,1), tck=-.02, mgp=c(1.2,.3,0), oma=c(0,0,3,0))
+for (k in 1:2){
+  plot(0,0,xlab="",ylab="",xaxt="n",yaxt="n",bty="n",type="n")
+  text(0, 0, if (k==1) "Maximum\nlikelihood\nestimate,\nfrom glm()" else "Bayes estimate\nwith default prior,\nfrom stan_glm()", cex=1.3)
+  for (l in 1:4){
+    rng <- range(fits_2[,l,"coef",] - fits_2[,l,"se",], fits_2[,l,"coef",] + fits_2[,l,"se",])
+    if (l==3) rng <- c(-18, 1)
+    plot(yrs, fits_2[,l,"coef",k], ylim=rng, ylab="Coefficient", xlab=if (k==2) "Year" else "", bty="l", xaxt="n", pch=20)
+    axis(1, c(1960, 1980, 2000))
+    abline(0,0,lwd=.5,lty=2)
+    for (j in 1:n_yrs){
+      lines(rep(yrs[j], 2), c(fits_2[j,l,"coef",k] - fits_2[j,l,"se",k], fits_2[j,l,"coef",k] + fits_2[j,l,"se",k]), lwd=.5)
+    }
+    if (k==1) mtext(dimnames(fits_2)[[2]][l], 3, 1.5, cex=.8)
+  }
+}
+```
+
+
+### Profile LL
+
+```{r}
+ok <- (!is.na(nes$rvote) & !is.na(nes$female) & !is.na(nes$black) & !is.na(nes$income))
+fit_glm <- glm(rvote ~ female + black + income, subset=(year==1964),
+                 family=binomial(link="logit"), data=nes[ok,])
+summary(fit_glm)
+
+betabl <- seq(-500, 0, by = 0.1)
+LP1 <- model.matrix(fit_glm)[, c(1, 2, 4)] %*% c(-1, -0.1, 0.2)
+LP2 <- matrix(nrow = nrow(LP1), ncol = length(betabl))
+for(i in 1:ncol(LP2)){
+  LP2[, i] <- betabl[i] * nes$black[ok & nes$year == 1964] + LP1
+}
+
+probs <- invlogit(LP2)
+y <-  nes$rvote[ok & nes$year == 1964]
+probs <- apply(probs, 2, function(x) y * x + (1-y) * (1-x))
+
+ML <- apply(probs, 2, function(x) prod(x))
+
+which.max(ML) # vedno največji beta0
+plot(betabl, ML)
+
+```
+
+
+#### LOO log score
+
+```{r }
+#(loo8a <- loo(fit_8a, save_psis=TRUE))
+```
+
+#### Compare models
+
+```{r }
+#loo_compare(loo8, loo8a)
+```
+
+
+
+## Fake data example
+
+```{r }
+data <- data.frame(rvote=rep(c(0,1), 10), income=1:20)
+fit_f <- stan_glm(rvote ~ income, family=binomial(link="logit"), data=data,
+                  refresh=0)
+new <- data.frame(income=5)
+predict <- posterior_predict(fit_f, newdata=new)
+```
+
+#### Plot jittered data and prediction from the logistic regression
+
+```{r eval=FALSE, include=FALSE}
+if (savefigs) pdf(root("NES/figs","income1a.pdf"), height=2.8, width=3.8)
+```
+
+```{r }
+n <- nrow(nes92)
+income_jitt <- nes92$income + runif(n, -.2, .2)
+vote_jitt <- nes92$rvote + ifelse(nes92$rvote==0, runif(n, .005, .05), runif(n, -.05, -.005))
+par(mar=c(3,3,1,.1), tck=-.01, mgp=c(1.7, .3, 0))
+ok <- nes92$presvote<3
+vote <- nes92$presvote[ok] - 1
+income <- nes92$income[ok]
+curve(invlogit(fit_1$coef[1] + fit_1$coef[2]*x), 1, 5, ylim=c(0,1),
+  xlim=c(-2,8), xaxt="n", xaxs="i", 
+  ylab="Pr (Republican vote)", xlab="Income", lwd=4, yaxs="i")
+curve(invlogit(fit_1$coef[1] + fit_1$coef[2]*x), -2, 8, lwd=.5, add=TRUE)
+axis(1, 1:5)
+mtext("(poor)", 1, 1.2, at=1, adj=.5)
+mtext("(rich)", 1, 1.2, at=5, adj=.5)
+points(income_jitt, vote_jitt, pch=20, cex=.1)
+```
+
+```{r eval=FALSE, include=FALSE}
+if (savefigs) dev.off()
+```
+
+#### Plot jittered data and prediction with uncertainties
+
+```{r eval=FALSE, include=FALSE}
+if (savefigs) pdf(root("NES/figs","income1b.pdf"), height=2.8, width=3.8)
+```
+
+```{r }
+par(mar=c(3,3,1,.1), tck=-.01, mgp=c(1.7, .3, 0))
+ok <- nes92$presvote<3
+vote <- nes92$presvote[ok] - 1
+income <- nes92$income[ok]
+curve (invlogit(fit_1$coef[1] + fit_1$coef[2]*x), .5, 5.5, ylim=c(0,1),
+  xlim=c(.5, 5.5), xaxt="n", xaxs="i", 
+  ylab="Pr (Republican vote)", xlab="Income", yaxs="i")
+axis(1, 1:5)
+mtext("(poor)", 1, 1.2, at=1, adj=.5)
+mtext("(rich)", 1, 1.2, at=5, adj=.5)
+sims_1 <- as.matrix(fit_1)
+n_sims <- nrow(sims_1)
+for (j in sample(n_sims, 20)){
+  curve(invlogit(sims_1[j,1] +sims_1[j,2]*x), .5, 5.5, lwd=.5, col="gray", add=TRUE)
+}
+curve(invlogit(fit_1$coef[1] + fit_1$coef[2]*x), .5, 5.5, add=TRUE)
+points(income_jitt, vote_jitt, pch=20, cex=.1)
+```
+```{r eval=FALSE, include=FALSE}
+if (savefigs) dev.off()
+```
+
+#### Series of regressions for different years
+
+```{r }
+yrs <- seq(1952, 2000, 4)
+n_yrs <- length(yrs)
+fits <- array(NA, c(n_yrs, 3), dimnames <- list(yrs, c("year", "coef", "se")))
+for (j in 1:n_yrs){
+  yr <- yrs[j]
+  ok <- (nes$year==yr & !is.na(nes$presvote) & nes$presvote<3 &
+         !is.na(nes$vote) & !is.na(nes$income))
+  vote <- nes$presvote[ok] - 1
+  income <- nes$income[ok]
+  fit_y <- stan_glm(vote ~ income, family=binomial(link="logit"),
+                    data = data.frame(vote, income),
+                    warmup = 500, iter = 1500, refresh = 0, 
+                    save_warmup = FALSE, cores = 1, open_progress = FALSE)
+  fits[j,] <- c(yr, coef(fit_y)[2], se(fit_y)[2])
+}
+```
+
+#### Plot the series of regression
+
+```{r eval=FALSE, include=FALSE}
+if (savefigs) pdf(root("NES/figs","incomeseries.pdf"), height=3.4, width=4.9)
+```
+
+```{r }
+par(mar=c(3,2.5,1,.2), tck=-.01, mgp=c(1.5, .3, 0))
+plot (fits[,"year"], fits[,"coef"], xlim=c(1950,2000), ylim=range(fits[,"coef"]-fits[,"se"], fits[,"coef"]+fits[,"se"]),
+  pch=20, ylab="Coefficient of income", xlab="Year", bty="l")
+for (j in 1:n_yrs){
+  lines(rep(fits[j,"year"], 2), fits[j,"coef"] + fits[j,"se"]*c(-1,1), lwd=.5)
+}
+abline(0,0,lwd=.5, lty=2)
+```
+
+```{r eval=FALSE, include=FALSE}
+if (savefigs) dev.off()
+```
+
+## Predictive accuracy and log score for logistic regression
+
+#### Estimate the with-in sample predictive accuracy
+
+```{r }
+predp <- fitted(fit_1)
+round(c(mean(predp[nes92$rvote==1]), mean(1-predp[nes92$rvote==0])), 3)
+```
+
+**Estimate the predictive performance of a model using
+within-sample log-score**
+
+```{r }
+round(sum(log(c(predp[nes92$rvote==1], 1-predp[nes92$rvote==0]))), 1)
+```
+
+
+
+**Estimate the predictive performance of a model using
+leave-one-out log-score (elpd_loo)**
+
+```{r }
+loo(fit_1)
+```
+
+## Identifiability and separation
+
+#### Illustrate nonidentifiability of logistic regression<br>
+Use "black" as a predictor (nonidentifiability in 1964)
+
+```{r results='hide'}
+fits_2 <- array(NA, c(n_yrs, 4, 2, 2), dimnames <- list(yrs, c("Intercept", "female", "black", "income"), c("coef", "se"), c("glm", "bayes")))
+ok <- (!is.na(nes$rvote) & !is.na(nes$female) & !is.na(nes$black) & !is.na(nes$income))
+for (j in 1:n_yrs){
+  print(yrs[j])
+  fit_glm <- glm(rvote ~ female + black + income, subset=(year==yrs[j]),
+                 family=binomial(link="logit"), data=nes[ok,])
+  fits_2[j,,1,1] <- coef(fit_glm)
+  fits_2[j,,2,1] <- se.coef(fit_glm)
+  fit_bayes <- stan_glm(rvote ~ female + black + income, subset=(year==yrs[j]),
+                        family=binomial(link="logit"), data=nes[ok,],
+                        warmup = 500, iter = 1500, refresh = 0, 
+                        save_warmup = FALSE, cores = 1, open_progress = FALSE)
+  fits_2[j,,1,2] <- coef(fit_bayes)
+  fits_2[j,,2,2] <- se(fit_bayes)
+  display(fit_glm)
+  print(fit_bayes)
+}
+```
+
+#### Plot illustration on nonidentifiability of logistic regression
+
+```{r eval=FALSE, include=FALSE}
+if (savefigs) pdf(root("NES/figs","separation_compare.pdf"), height=2.8, width=8.3)
+```
+```{r fig.width=9, fig.height=6}
+par(mfrow=c(2,5), mar=c(3,3,0,1), tck=-.02, mgp=c(1.2,.3,0), oma=c(0,0,3,0))
+for (k in 1:2){
+  plot(0,0,xlab="",ylab="",xaxt="n",yaxt="n",bty="n",type="n")
+  text(0, 0, if (k==1) "Maximum\nlikelihood\nestimate,\nfrom glm()" else "Bayes estimate\nwith default prior,\nfrom stan_glm()", cex=1.3)
+  for (l in 1:4){
+    rng <- range(fits_2[,l,"coef",] - fits_2[,l,"se",], fits_2[,l,"coef",] + fits_2[,l,"se",])
+    if (l==3) rng <- c(-18, 1)
+    plot(yrs, fits_2[,l,"coef",k], ylim=rng, ylab="Coefficient", xlab=if (k==2) "Year" else "", bty="l", xaxt="n", pch=20)
+    axis(1, c(1960, 1980, 2000))
+    abline(0,0,lwd=.5,lty=2)
+    for (j in 1:n_yrs){
+      lines(rep(yrs[j], 2), c(fits_2[j,l,"coef",k] - fits_2[j,l,"se",k], fits_2[j,l,"coef",k] + fits_2[j,l,"se",k]), lwd=.5)
+    }
+    if (k==1) mtext(dimnames(fits_2)[[2]][l], 3, 1.5, cex=.8)
+  }
+}
+```
+
+```{r eval=FALSE, include=FALSE}
+if (savefigs) dev.off()
+```
+
+

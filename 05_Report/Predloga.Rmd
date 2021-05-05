@@ -1,8 +1,6 @@
 ---
 title: "Naslov"
 author: "Andrej Sokolič"
-header-includes:
-   - \usepackage[slovenian]{babel}
 params: 
   printcode: FALSE
   printresults: hide
@@ -10,6 +8,7 @@ params:
   displaywarnings : FALSE
   evalForSol: TRUE
   d: !r Sys.Date() 
+  msgshow: FALSE
 output:
   html_document: default
   pdf_document: default
@@ -17,7 +16,7 @@ output:
 
 ```{r, setup, include=FALSE}
 # set this option in the first code chunk in the document
-knitr::opts_chunk$set(echo = params$printcode, results= params$printresults, fig.show = params$figshow, warning = params$displaywarnings, eval=params$evalForSol, 
+knitr::opts_chunk$set(echo = params$printcode, results= params$printresults, fig.show = params$figshow, warning = params$displaywarnings, eval=params$evalForSol, message = params$msgshow,
                       fig.align='center')
 ```
 
@@ -25,7 +24,7 @@ knitr::opts_chunk$set(echo = params$printcode, results= params$printresults, fig
 
 ```
 
-
+Dokument pripravljen z verzijo R-a `r getRversion()`. Danasnji datum je `r params$d`.
 
 Hitra povezava na dokument z navodili za pripravo dokumentov z [R Markdown (cheat sheet)](https://github.com/rstudio/cheatsheets/raw/master/rmarkdown-2.0.pdf)
 
