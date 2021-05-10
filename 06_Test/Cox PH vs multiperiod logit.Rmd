@@ -83,6 +83,35 @@ Data <- newcgd
 Data$futime <- round(Data$futime / 30)
 Data$tstart2 <- ceiling(Data$tstart / 30)
 Data$tstop2 <- ceiling(Data$tstop / 30)
-Data$tstart2[Data$tstart2 == Data$tstop2] <- Data$tstart2 - 1
+Data$tstart2[Data$tstart2 == Data$tstop2] <- Data$tstart2[Data$tstart2 == Data$tstop2] - 1
+```
+
+
+Ta ni ok, imajo večkrat infect = 1
+
+```{r}
+Data %>% group_by(id) %>% summarise(sum(infect))
+```
+
+
+## HEART DATA
+
+```{r}
+head(heart)
+```
+
+Je že v ok formatu.
+
+```{r}
+Fit_CPH <- coxph(Surv(start, stop, event) ~ age + surgery + transplant +
++ cluster(id), heart)
+
+summary(Fit_CPH)
+```
+
+
+```{r}
+range(heart$start)
+range(heart$stop)
 ```
 
