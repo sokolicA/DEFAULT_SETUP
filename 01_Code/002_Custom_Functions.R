@@ -8,11 +8,18 @@ f_Error_Check <- function(expr){
 
 # Read sql file -----------------------------------------------------------
 
+# Read SQL query into string
 f_Get_SQL <- function(filepath){
   readr::read_file(filepath)
 }
+#cat(f_Get_SQL(here::here("06_Test", "get_sql_query.sql")))
 
-# cat(f_Get_SQL(here::here("06_Test", "get_sql_query.sql")))
+# Replace variables/names in query
+f_Replace_SQL <- function(query, pattern, replacement){
+  gsub(pattern, replacement, query)
+}
+#cat(f_Replace_SQL(f_Get_SQL(here::here("06_Test", "get_sql_query.sql")), "my_count", "your_count"))
+
 
 
 # SKD Sector classification ---------------------------------------------------
