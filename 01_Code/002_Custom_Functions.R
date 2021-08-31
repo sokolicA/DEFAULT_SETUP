@@ -4,7 +4,18 @@
 f_Error_Check <- function(expr){
   any(class(tryCatch(expr, error = function(e) e)) == "error")
 }
-# Sector classification ---------------------------------------------------
+
+
+# Read sql file -----------------------------------------------------------
+
+f_Get_SQL <- function(filepath){
+  readr::read_file(filepath)
+}
+
+# cat(f_Get_SQL(here::here("06_Test", "get_sql_query.sql")))
+
+
+# SKD Sector classification ---------------------------------------------------
 
 f_SKD_To_Short <- function(skd){
   skd <- as.numeric(str_sub(skd, 1, 2))
