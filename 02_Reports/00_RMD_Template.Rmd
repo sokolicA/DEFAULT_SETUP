@@ -27,12 +27,6 @@ params:
   subtitle: FALSE
 ---
 
-```{r logo, echo = FALSE}
-htmltools::img(src = knitr::image_uri("00_Style/logo_as.png"),
-               alt = "logo",
-               style = "width:15rem; position:absolute; top:2rem; right:5rem; padding-right:5rem;")
-```
-
 
 
 ```{r setup, include=FALSE}
@@ -65,8 +59,15 @@ report_subtitle <- ifelse(
   ""
 )
 
-source(here("01_Code", "00_General_Parameters.r"), encoding = "UTF-8")
+source(here("01_Scripts", "00_General_Parameters.r"), encoding = "UTF-8")
 ```
+
+```{r logo, echo = FALSE}
+htmltools::img(src = knitr::image_uri(here("02_Reports/00_Style", "logo_as.png")),
+               alt = "logo",
+               style = "width:15rem; position:absolute; top:2rem; right:5rem; padding-right:5rem;")
+```
+
 
 ```{r libraries, echo = FALSE}
 library(tidyverse)
