@@ -3,11 +3,14 @@
 00_Data contains raw and processed data files.
 
 01_Scripts contains functions and code. 
-	001_Packages: Installs general packages
-	002_Custom_Functions: General user-defined functions
-	010_Import: Used if data has to be imported manually from various sources	 		
-	011_Wrangle: Contains data transformations. Used to clean/tidy data. 
-	012_Explore: Explore and visualize data. Find patterns, problems, etc. Further cleaning can be done in this step if necessary.
+	000_Run_All: Runs scripts / reports.
+	00_Install_Packages: Installs general packages
+	00_Custom_Functions: General user-defined functions
+	001_Import: Used if data has to be imported manually from various sources	 		
+	002_Tidy: Contains data cleaning. 
+	003_Transform: Data transformations.
+	004_Visualize: Explore and visualize data. Find patterns, problems, etc. Further cleaning can be done in this step if necessary.
+	005_Model: Modeling.
 
 02_Reports contains report documents - Rmarkdown files and presentations.
 
