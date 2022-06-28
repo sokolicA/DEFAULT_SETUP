@@ -75,8 +75,8 @@ library(tidyverse)
 
 `r ifelse(params$print_session_info, "**Session Information:**\n", "")`
 
-```{r sess_info, eval = params$print_session_info, results='markup'}
-sessioninfo::session_info()
+```{r sess_info, results='markup'}
+if(params$print_session_info) sessioninfo::session_info()
 ```
 
 

@@ -12,13 +12,16 @@ local({
     "tidyverse", 
     "mlr3",
     "mlr3verse",
+    "car",
     "Hmisc", 
     "lubridate", 
     "forcats",
     "crosstalk",
     "DT",
     "plotly",
-    "gt"
+    "gt",
+    "gtsummary",
+    "ISLR"
   )
   # Missing packages
   missing_pkgs <- setdiff(packages, rownames(installed.packages()))
