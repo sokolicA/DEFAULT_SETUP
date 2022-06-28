@@ -1,0 +1,161 @@
+---
+title: "RMD template"
+author: "Andrej Sokolič"
+output:
+  rmarkdown::html_document:
+    toc: true
+    toc_float: false
+    number_sections: true
+    theme: spacelab
+    fig_caption: true
+    css: "00_Style/Report_Style.css"
+  pdf_document: default
+params: 
+  d: !r Sys.Date()
+  eval: TRUE
+  fig_align: center
+  fig_asp: 0.618
+  fig_out_width: 70%
+  fig_pos: asis
+  fig_width: 6
+  locale: slovenian
+  print_code: FALSE
+  print_msgs: FALSE
+  print_txt_results: asis
+  print_session_info: FALSE
+  print_warnings : FALSE
+  subtitle: FALSE
+---
+
+```{r logo, echo = FALSE}
+htmltools::img(src = knitr::image_uri("00_Style/logo_as.png"),
+               alt = "logo",
+               style = "width:15rem; position:absolute; top:2rem; right:5rem; padding-right:5rem;")
+```
+
+
+
+```{r setup, include=FALSE}
+library(here)
+
+knitr::opts_chunk$set(
+  echo = params$print_code,
+  eval = params$eval, 
+  fig.align = params$fig_align,
+  fig.asp = params$fig_asp,
+  fig.show = params$fig_pos, 
+  fig.width = params$fig_width,
+  message = params$print_msgs,
+  out.width = params$fig_out_width,
+  results = params$print_txt_results, 
+  warning = params$print_warnings
+)
+
+Sys.setlocale("LC_ALL", params$locale)
+
+report_date <- ifelse(
+  grepl("eng", params$locale, ignore.case = TRUE), 
+  params$d, 
+  format(params$d, format = "%d.%m.%Y")
+)
+
+report_subtitle <- ifelse(
+  params$subtitle != FALSE,
+  params$subtitle,
+  ""
+)
+
+source(here("01_Code", "00_General_Parameters.r"), encoding = "UTF-8")
+```
+
+```{r libraries, echo = FALSE}
+library(tidyverse)
+```
+
+`r ifelse(params$print_session_info, "**Session Information:**\n", "")`
+
+```{r sess_info, eval = params$print_session_info, results='markup'}
+sessioninfo::session_info()
+```
+
+
+---
+date: `r report_date`
+subtitle: `r report_subtitle`
+---
+
+
+<!-- BEGINNING OF THE DOCUMENT -->
+
+[R Markdown (cheat sheet)](https://github.com/rstudio/cheatsheets/blob/main/rmarkdown-2.0.pdf){target="_blank"}
+
+[R markdown lessons from R Studio](https://rmarkdown.rstudio.com/lesson-1.html){target="_blank"}
+
+
+
+
+# KAzalo
+
+jaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+```{r}
+iris %>% 
+ggplot(aes(x = Sepal.Length, y = Sepal.Width, color = Species)) +
+  geom_point() +
+  scale_color_discrete(type = palette_cb) +
+  theme_minimal() +
+  theme(
+    panel.border = element_rect(fill = NA)
+  )
+```
+
+
+# kaj
+ne
+
+```{r}
+theme_custom <-
+  theme_minimal() +
+  theme(
+    panel.border = element_rect(fill = NA)
+  )
+
+
+iris %>% 
+ggplot(aes(x = Sepal.Length, y = Sepal.Width, color = Species)) +
+  geom_point() +
+  theme_custom
+```
+
+
+# Kje je kazalo
+
+```{r}
+iris %>% 
+ggplot(aes(x = Sepal.Length, y = Sepal.Width, color = Petal.Length)) +
+  geom_point() +
+  theme_custom
+```
+
+
+# še nekaj
+
+```{r}
+iris %>% 
+ggplot(aes(x = Sepal.Length, y = Sepal.Width)) +
+  geom_point() +
+  theme_custom
+```
+
+## pa tu
+
+
+# uff 
+
+a
+
+af
+af
+
+d
+f

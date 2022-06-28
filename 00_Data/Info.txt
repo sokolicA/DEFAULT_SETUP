@@ -1,0 +1,2 @@
+Raw_Data contains raw data (directly from the source).
+The raw data is then preprocessed and saved in a R format in the main folder.

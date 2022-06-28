@@ -1,0 +1,115 @@
+---
+title: ""
+subtitle: ""
+author: "Andrej Sokolič"
+date: "`r Sys.Date()`"
+output: ioslides_presentation
+---
+
+<!-- --------------------------------------- ->
+<!-- Naslednji del predstavlja CSS oblikovanje -->
+
+<style type="text/css">
+<!-- body p { -->
+<!--   color: #000000; -->
+<!-- } -->
+
+slides > slide {
+font-family: 'Arial';
+}
+ul {
+  display: block;
+  font-size: 30px;
+  margin-top: 0;
+  margin-bottom: 0;
+  margin-left: 0;
+  margin-right: 0;
+  color: #494949;
+}
+
+
+.title-slide hgroup h1 {
+  color: black;
+}
+
+.title-slide hgroup h2 {
+  color: black;
+}
+
+.title-slide hgroup p {
+  font-size: 24px;
+  color: #494949;
+  font-weight: bold;
+}
+
+slides > slide > hgroup h2 {
+  color: black;
+}
+
+#ID > p { 
+  margin-top: -50px; 
+} 
+
+/* spodaj da je lahko tabela in slika levo desno */
+
+.twoC {width: 100%} 
+.clearer {clear: both}
+.twoC .table {max-width: 50%; float: right}
+.twoC img {max-width: 50%; float: left}
+
+.levo img {
+  max-width: 50%;
+  float:left;
+  margin-top: -50px;
+  margin-left: -20px;
+}
+
+.desno img {
+  max-width: 50%;
+  float:right;
+  margin-top: 50px;
+  margin-left: -20px;
+}
+</style>
+
+<!-- --------------------------------------- ->
+<!-- Začetek dokumenta -->
+
+```{r LIBs, include=FALSE}
+knitr::opts_chunk$set(echo = F, message = F, warning = FALSE,  fig.align='center')
+
+```
+
+```{r DATA, warning=FALSE, include=F}
+
+```
+
+
+
+## Uvod
+
+
+
+## Uporabi ID definiran v CSS {#ID}
+
+
+
+<p class = "levo">
+
+
+</p>
+
+<p class = "desno">
+
+</p>
+
+
+
+## AA
+
+<div float: center>
+
+</div>
+
+<!-- Prazen slajd -->
+***

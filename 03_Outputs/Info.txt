@@ -1,0 +1,3 @@
+Data contains output data.
+Table contains output tables.
+Image contains outpud images, plots, graphs,...
