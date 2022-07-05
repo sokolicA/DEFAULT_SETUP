@@ -1,3 +1,5 @@
+NO LONGER IN USE - NOW CONTAINED IN THE GENERAL atools PACKAGE! atools::copy_project_structure()
+
 000_References contains references and methodology.
 
 00_Data contains raw and processed data files.

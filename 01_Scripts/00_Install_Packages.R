@@ -1,6 +1,7 @@
 local({
   # List of packages
   packages <- c(
+    "devtools",
     "sessioninfo",
     "here",
     "knitr",
@@ -19,6 +20,9 @@ local({
     "crosstalk",
     "DT",
     "plotly",
+    "highcharter",
+    "ggh4x",
+    "rayshader",
     "gt",
     "gtsummary",
     "ISLR"
